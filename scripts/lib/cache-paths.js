@@ -1,14 +1,24 @@
 /**
  * cache-paths.js — Single source of truth for all cache path resolution.
  *
- * Structure:
- *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/timeline.csv
+ * One base, one sub-tree per host. Claude Code stays at the root (the Bash
+ * statusline hook writes there directly); Codex lives under `codex/`.
+ *
+ *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/timeline.csv       Claude Code
  *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/summary.json
  *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/ratelimit.csv
  *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/compact.txt
  *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/compact.aggressive.txt
  *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/subagents/{agentId}/timeline.csv
  *   ~/.claude/super-token-saver-data/{projectName}/{sessionId}/subagents/{agentId}/summary.json
+ *   ~/.claude/super-token-saver-data/codex/{projectName}/{sessionId}/…               Codex (same files)
+ *   ~/.claude/super-token-saver-data/codex/.normalized/{projectName}/{sessionId}.jsonl  Codex rollouts, CC-shaped
+ *
+ * The root getters below are the Claude Code tree. `forHost('codex')` returns
+ * the same getters bound to the Codex tree. `listProjects()` never returns the
+ * `codex` directory, so a tree walk on one host cannot pick up the other's
+ * sessions — the two hosts share file names, and `summary.json`'s `host` field
+ * used to be the only thing telling them apart.
  */
 
 const path = require('path');
@@ -17,6 +27,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const CACHE_BASE = path.join(os.homedir(), '.claude', 'super-token-saver-data');
+const CODEX_SUBDIR = 'codex';
+const CODEX_BASE = path.join(CACHE_BASE, CODEX_SUBDIR);
+const HOST_BASES = { claude: CACHE_BASE, codex: CODEX_BASE };
 
 // Auto-migrate from previous names (rename only, no cross-device copy)
 const _legacyDirs = [
@@ -101,49 +114,118 @@ function extractProjectName(filePath) {
 }
 
 // ---------------------------------------------------------------------------
-// Path getters — session level
+// Path getters — one set per host tree
 // ---------------------------------------------------------------------------
 
-function getProjectDir(projectName) {
-  return path.join(CACHE_BASE, projectName);
+function _pathsFor(base) {
+  const getProjectDir = (projectName) => path.join(base, projectName);
+  const getSessionDir = (projectName, sessionId) => path.join(getProjectDir(projectName), sessionId);
+  const getSubagentDir = (projectName, sessionId, agentId) => path.join(getSessionDir(projectName, sessionId), 'subagents', agentId);
+  const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
+  return {
+    base,
+    getProjectDir,
+    getSessionDir,
+    getTimelinePath: (projectName, sessionId) => path.join(getSessionDir(projectName, sessionId), 'timeline.csv'),
+    getSummaryPath: (projectName, sessionId) => path.join(getSessionDir(projectName, sessionId), 'summary.json'),
+    getRatelimitPath: (projectName, sessionId) => path.join(getSessionDir(projectName, sessionId), 'ratelimit.csv'),
+    getCompactPath: (projectName, sessionId, aggressive = false) =>
+      path.join(getSessionDir(projectName, sessionId), aggressive ? 'compact.aggressive.txt' : 'compact.txt'),
+    getSubagentDir,
+    getSubagentTimelinePath: (projectName, sessionId, agentId) => path.join(getSubagentDir(projectName, sessionId, agentId), 'timeline.csv'),
+    getSubagentSummaryPath: (projectName, sessionId, agentId) => path.join(getSubagentDir(projectName, sessionId, agentId), 'summary.json'),
+    /**
+     * Project directories in this tree. Skips the other host's sub-tree, dot
+     * dirs (normalized rollouts, markers), the old YYMM layout, and 'lib'.
+     */
+    listProjects: () => {
+      if (!fs.existsSync(base)) return [];
+      return fs.readdirSync(base).filter((d) => {
+        if (/^\d{4}$/.test(d)) return false;           // old YYMM dirs
+        if (d.endsWith('.migrated')) return false;       // migrated YYMM dirs
+        if (d === 'lib' || d === CODEX_SUBDIR) return false;
+        if (d.startsWith('.')) return false;
+        return isDir(path.join(base, d));
+      });
+    },
+    listSessions: (projectName) => {
+      const dir = getProjectDir(projectName);
+      if (!fs.existsSync(dir)) return [];
+      return fs.readdirSync(dir).filter((d) => isDir(path.join(dir, d)));
+    },
+    listSubagents: (projectName, sessionId) => {
+      const dir = path.join(getSessionDir(projectName, sessionId), 'subagents');
+      if (!fs.existsSync(dir)) return [];
+      return fs.readdirSync(dir).filter((d) => isDir(path.join(dir, d)));
+    },
+  };
 }
 
-function getSessionDir(projectName, sessionId) {
-  return path.join(getProjectDir(projectName), sessionId);
+const _claudePaths = _pathsFor(CACHE_BASE);
+const _codexPaths = _pathsFor(CODEX_BASE);
+
+/** Getters bound to a host's tree. `forHost('claude')` is the root set. */
+function forHost(host) {
+  if (host === 'codex') return _codexPaths;
+  if (host === 'claude' || host == null) return _claudePaths;
+  throw new Error(`cache-paths: unknown host "${host}"`);
 }
 
-function getTimelinePath(projectName, sessionId) {
-  return path.join(getSessionDir(projectName, sessionId), 'timeline.csv');
-}
-
-function getSummaryPath(projectName, sessionId) {
-  return path.join(getSessionDir(projectName, sessionId), 'summary.json');
-}
-
-function getRatelimitPath(projectName, sessionId) {
-  return path.join(getSessionDir(projectName, sessionId), 'ratelimit.csv');
-}
-
-function getCompactPath(projectName, sessionId, aggressive = false) {
-  const name = aggressive ? 'compact.aggressive.txt' : 'compact.txt';
-  return path.join(getSessionDir(projectName, sessionId), name);
-}
+const {
+  getProjectDir, getSessionDir, getTimelinePath, getSummaryPath, getRatelimitPath, getCompactPath,
+  getSubagentDir, getSubagentTimelinePath, getSubagentSummaryPath,
+} = _claudePaths;
 
 // ---------------------------------------------------------------------------
-// Path getters — subagent level
+// Migration — Codex entries out of the Claude tree into codex/
 // ---------------------------------------------------------------------------
 
-function getSubagentDir(projectName, sessionId, agentId) {
-  return path.join(getSessionDir(projectName, sessionId), 'subagents', agentId);
+/**
+ * Codex sessions used to be cached in the same {project}/{session} tree as
+ * Claude Code, tagged only by summary.json's `host`. Move every such entry
+ * (and the normalized rollouts) under codex/. Rename only, idempotent.
+ *
+ * Pre-split Codex data always came with a `.codex-normalized` dir (analysis
+ * normalizes first), so that dir is the trigger: the summary.json scan runs
+ * only while it exists, and moving it is what stops the scan on later loads.
+ * No marker file — the cache tree must contain nothing but cache.
+ */
+function migrateCodexSubdir() {
+  const oldNormalized = path.join(CACHE_BASE, '.codex-normalized');
+  if (!fs.existsSync(oldNormalized)) return { moved: 0 };
+  let moved = 0;
+  for (const proj of _claudePaths.listProjects()) {
+    for (const sess of _claudePaths.listSessions(proj)) {
+      let host = null;
+      try {
+        const raw = fs.readFileSync(_claudePaths.getSummaryPath(proj, sess), 'utf8');
+        const m = raw.match(/"host"\s*:\s*"(\w+)"/);
+        host = m ? m[1] : null;
+      } catch (_) { continue; }
+      if (host !== 'codex') continue;
+      const to = _codexPaths.getSessionDir(proj, sess);
+      if (fs.existsSync(to)) continue;
+      try {
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.renameSync(_claudePaths.getSessionDir(proj, sess), to);
+        moved++;
+      } catch (_) { /* a cache that cannot be moved must not stop the tool */ }
+    }
+    try { fs.rmdirSync(_claudePaths.getProjectDir(proj)); } catch (_) { /* not empty */ }
+  }
+  // Last, so a crash mid-scan leaves the trigger in place and the next load resumes.
+  const newNormalized = path.join(CODEX_BASE, '.normalized');
+  try {
+    fs.mkdirSync(CODEX_BASE, { recursive: true });
+    if (!fs.existsSync(newNormalized)) fs.renameSync(oldNormalized, newNormalized);
+    else fs.rmSync(oldNormalized, { recursive: true, force: true }); // stale copies; the normalizer re-creates on demand
+    moved++;
+  } catch (_) { /* leave it; the scan simply runs again next time */ }
+  if (moved) process.stderr.write(`[cache-paths] moved ${moved} Codex cache entr${moved === 1 ? 'y' : 'ies'} under codex/\n`);
+  return { moved };
 }
 
-function getSubagentTimelinePath(projectName, sessionId, agentId) {
-  return path.join(getSubagentDir(projectName, sessionId, agentId), 'timeline.csv');
-}
-
-function getSubagentSummaryPath(projectName, sessionId, agentId) {
-  return path.join(getSubagentDir(projectName, sessionId, agentId), 'summary.json');
-}
+try { migrateCodexSubdir(); } catch (_) {}
 
 // ---------------------------------------------------------------------------
 // Hashing
@@ -160,43 +242,8 @@ function hashId(id) {
 // Listing helpers
 // ---------------------------------------------------------------------------
 
-/**
- * List all project directories under CACHE_BASE.
- * Excludes non-directory entries and internal dirs like 'lib'.
- * Also excludes YYMM dirs (4-digit) and .migrated dirs.
- */
-function listProjects() {
-  if (!fs.existsSync(CACHE_BASE)) return [];
-  return fs.readdirSync(CACHE_BASE).filter(d => {
-    if (/^\d{4}$/.test(d)) return false;           // old YYMM dirs
-    if (d.endsWith('.migrated')) return false;       // migrated YYMM dirs
-    if (d === 'lib') return false;
-    const full = path.join(CACHE_BASE, d);
-    return fs.statSync(full).isDirectory();
-  });
-}
-
-/**
- * List session directories inside a project.
- */
-function listSessions(projectName) {
-  const dir = getProjectDir(projectName);
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(d => {
-    return fs.statSync(path.join(dir, d)).isDirectory();
-  });
-}
-
-/**
- * List subagent directories inside a session.
- */
-function listSubagents(projectName, sessionId) {
-  const dir = path.join(getSessionDir(projectName, sessionId), 'subagents');
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(d => {
-    return fs.statSync(path.join(dir, d)).isDirectory();
-  });
-}
+// Claude Code tree listings. The Codex tree's are on forHost('codex').
+const { listProjects, listSessions, listSubagents } = _claudePaths;
 
 // ---------------------------------------------------------------------------
 // Migration — YYMM flat structure → project/session hierarchy
@@ -448,6 +495,11 @@ function _findParentSession(ccProjectsDir, agentId, sessionProjectMap) {
 
 module.exports = {
   CACHE_BASE,
+  CODEX_BASE,
+  CODEX_SUBDIR,
+  HOST_BASES,
+  forHost,
+  migrateCodexSubdir,
   projectNameFromCwd,
   extractProjectName,
   getProjectDir,

@@ -323,12 +323,16 @@ function toISOUtc(ts) {
 }
 
 // Derive cache path from JSONL path.
-// JSONL:  ~/.claude/projects/{projectHash}/{sessionId}.jsonl
-// Cache:  ~/.claude/super-token-saver-data/{projectHash}/{sessionId}/compact.txt
+// Claude: ~/.claude/projects/{projectHash}/{sessionId}.jsonl
+//      →  ~/.claude/super-token-saver-data/{projectHash}/{sessionId}/compact.txt
+// Codex:  a normalized rollout under the codex/ sub-tree
+//      →  ~/.claude/super-token-saver-data/codex/{projectHash}/{sessionId}/compact.txt
 function deriveCachePath(jsonlAbsPath) {
+  const { CODEX_BASE, forHost } = require("./lib/cache-paths");
   const sessionId = path.basename(jsonlAbsPath, ".jsonl");
   const projectHash = path.basename(path.dirname(jsonlAbsPath));
-  const cacheDir = path.join(os.homedir(), ".claude", "super-token-saver-data", projectHash, sessionId);
+  const host = path.resolve(jsonlAbsPath).startsWith(CODEX_BASE + path.sep) ? "codex" : "claude";
+  const cacheDir = forHost(host).getSessionDir(projectHash, sessionId);
   return { cacheDir, cachePath: path.join(cacheDir, "compact.txt"), sessionId, projectHash };
 }
 

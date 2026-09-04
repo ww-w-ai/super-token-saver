@@ -147,7 +147,7 @@ try {
 check("listing fails closed when normalization cache is unwritable", () => blockedListing.includes("failed to normalize Codex session"), true);
 
 if (sessions[0]) execFileSync("node", [path.join(__dirname, "preprocess.js"), sessions[0].path, "--original", mainPath], { encoding: "utf8" });
-const cachePath = path.join(os.homedir(), ".claude", "super-token-saver-data", workCwd.replace(/[^a-zA-Z0-9]/g, "-"), mainMeta.id, "compact.txt");
+const cachePath = path.join(os.homedir(), ".claude", "super-token-saver-data", "codex", workCwd.replace(/[^a-zA-Z0-9]/g, "-"), mainMeta.id, "compact.txt");
 const compact = fs.existsSync(cachePath) ? fs.readFileSync(cachePath, "utf8") : "";
 check("compact records the boundary", compact.includes("[auto-compact boundary]"), true);
 check("compact keeps the typed turn", compact.includes("port the reader to rust"), true);

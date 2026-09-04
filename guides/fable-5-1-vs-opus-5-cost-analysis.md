@@ -4,6 +4,7 @@
 **Environment**: Claude Code, macOS, Max 20x plan, mixed Korean/English dialog
 **Sample size**: 2,782 sessions (1,331 main + 1,451 subagents), 14.86B tokens, $7,646 billed
 **Method**: `/usage-view` (super-token-saver v3.3.0), subagent-replay deduplication applied
+**Price basis**: Anthropic's published API list prices. Subscription-plan rate limits (Max 5-hour / weekly windows) deduct differently; see Appendix A.
 
 > 한국어: [fable-5-1-vs-opus-5-cost-analysis.ko.md](./fable-5-1-vs-opus-5-cost-analysis.ko.md)
 
@@ -288,6 +289,47 @@ sprints. Your cache-read share will differ. The direction of the effect will not
 
 The price sheet says 2×. Anthropic's own charts say 24–38% less at equal quality, and real sessions
 push it further.
+
+Every dollar figure above is API list price. If you are on a Max plan, what you actually spend is
+5-hour and weekly window percentage, and the window is not billed at list price. Appendix A reports
+what we measured.
+
+---
+
+## Appendix A. Subscription windows: what one experiment showed (2026-09-04)
+
+Max plans do not bill dollars; they consume a 5-hour rolling window and a weekly window. Anthropic
+does not publish how tokens map to window percentage, so we measured one token type directly.
+
+**Setup.** One Claude Code session with a ~430K-token context, forked into a subagent that called a
+no-op shell command 1,000 times in a row. Each call re-reads the full context as prompt-cache read
+and produces a few output tokens. Cache writes and output are near zero, so the window movement is
+attributable to cache read alone. The 5-hour utilization was read from Anthropic's OAuth usage
+endpoint every 50 calls. No other session ran on the account. Same protocol for both models.
+
+| | Opus 5 | Fable 5.1 |
+|---|---|---|
+| Requests | 995 | 1,001 |
+| Cache-read tokens | 441M | 435M |
+| Cache-write tokens | 0.5M | 0.7M |
+| Output tokens | 9.6K | 10.9K |
+| 5-hour window moved | +7 pt | +7–8 pt |
+
+**Finding.** Per cache-read token, the two models consumed the 5-hour window at the same rate,
+about 0.011–0.013 points per million tokens (5h utilization is reported as an integer, hence the
+range). That is far below what list-price proportionality would imply for either model.
+
+**What it means for this report.** The 24–38% figure and the cache-read multiplier in §3 rest on
+list prices, where Fable 5.1's cache read is half of Opus 5's. On a subscription plan the rate
+limiter appears to charge cache read per token, not per list dollar. Anyone reasoning "the window
+deducts in proportion to price" would conclude Fable 5.1 could drain the window up to about twice
+as fast as its list price suggests. We have not verified that; it is a possibility the measurement
+leaves open, not a result. Cache write and output were not measured for Fable 5.1, and both weigh
+more than cache read on the window.
+
+**Caveats.** One account, one day, integer-resolution utilization, one token type. Both runs showed
+the same non-linear step (3 points at call 250, then 1 point per ~250 calls), so the limiter is not
+a simple per-request tally; we do not yet know why.
 
 ---
 

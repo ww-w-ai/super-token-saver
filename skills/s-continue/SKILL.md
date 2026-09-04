@@ -234,7 +234,9 @@ node "${PLUGIN_ROOT}/scripts/preprocess.js" "${TRANSCRIPT_PATH}"
 node "${PLUGIN_ROOT}/scripts/preprocess.js" "${TRANSCRIPT_PATH}" --original "${ORIGINAL_PATH}"
 ```
 
-The cache file is at:
+The cache file is at (Claude Code sessions; a Codex session's cache is the same path with
+`codex/` inserted after `super-token-saver-data/` — `restore.js` resolves both, so only build
+this by hand to inspect the cache):
 ```bash
 PROJECT_HASH=$(echo "${PWD}" | sed 's/[^a-zA-Z0-9]/-/g')
 CACHE_FILE="${HOME}/.claude/super-token-saver-data/${PROJECT_HASH}/${SESSION_ID}/compact.txt"
@@ -486,7 +488,7 @@ You MUST review the last 5 messages from the restored context and provide a "Las
 - {N} session(s) loaded ({date range}) — {n} Claude Code, {m} Codex
 - Level {1|2|3} ({headline|recent|full}) — {what that meant here, e.g. "user turns only, 38 of them"}. Say this even at level 3, so the reader knows depth was a choice.
 - [Session:{sid} {ISO} L{n}] headers link to the original transcript — Claude Code at ~/.claude/projects/{PROJECT_HASH}/{SESSION_ID}.jsonl, Codex at the `originalPath` from list-sessions. Use L{n} to read the exact line; the numbering is the original's in both cases.
-- Preprocessed caches: ~/.claude/super-token-saver-data/{PROJECT_HASH}/{SESSION_ID}/compact.txt
+- Preprocessed caches: ~/.claude/super-token-saver-data/{PROJECT_HASH}/{SESSION_ID}/compact.txt (Codex: …-data/codex/{PROJECT_HASH}/{SESSION_ID}/compact.txt)
 - 💡 Next session: run `/clear` first, then `/s-continue` to restore context cheaply
 
 **Last 5 messages:**

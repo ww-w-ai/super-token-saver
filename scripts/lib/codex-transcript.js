@@ -13,16 +13,16 @@
  *
  * Layout:
  *   source ~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<sessionId>.jsonl
- *   norm   ~/.claude/super-token-saver-data/.codex-normalized/{projectHash}/{sessionId}.jsonl
- *   cache  ~/.claude/super-token-saver-data/{projectHash}/{sessionId}/compact.txt
+ *   norm   ~/.claude/super-token-saver-data/codex/.normalized/{projectHash}/{sessionId}.jsonl
+ *   cache  ~/.claude/super-token-saver-data/codex/{projectHash}/{sessionId}/compact.txt
  *
- * The normalized file lives under a dot-prefixed dir so `listProjects()` skips it.
+ * Everything Codex-related lives under the codex/ sub-tree; see cache-paths.js.
  */
 
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { CACHE_BASE, projectNameFromCwd } = require("./cache-paths");
+const { CODEX_BASE, projectNameFromCwd } = require("./cache-paths");
 
 // Codex resolves its own state directory through CODEX_HOME, so honour it —
 // a non-default Codex home would otherwise be invisible to this tool.
@@ -31,7 +31,8 @@ const CODEX_ROOTS = [
   path.join(CODEX_HOME, "sessions"),
   path.join(CODEX_HOME, "archived_sessions"),
 ];
-const NORMALIZED_ROOT = path.join(CACHE_BASE, ".codex-normalized");
+// Inside the Codex sub-tree, dot-prefixed so forHost('codex').listProjects() skips it.
+const NORMALIZED_ROOT = path.join(CODEX_BASE, ".normalized");
 const INDEX_PATH = path.join(NORMALIZED_ROOT, "index.json");
 // v3: turn_context (model) and event_msg/token_count (usage + rate_limits)
 // rows are now translated into host-neutral `codex_turn_context` /

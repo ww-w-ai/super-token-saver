@@ -617,15 +617,15 @@ const mergedSample = analyzeOut.rateLimitSamples.find((s) => s.limitId === "code
 check("merged sample lists both sessions", (mergedSample.mergedSessions || []).sort(), [sess1Meta.id, sess2Meta.id].sort());
 check("canonical rate limit ignores shorter additional buckets", [analyzeOut.canonicalRateLimits.primary.windowMinutes, analyzeOut.summary.windowMinutes], [10080, 10080]);
 
-// -- Codex/Claude cache-entry collision: a stale/foreign summary.json at the
-// same path must not be misread as a valid Codex (or Claude) cache. Codex and
-// Claude sessions share the SAME cache tree by design now (getSessionDir),
-// so this checks the `host` discriminator in isCodexCacheValid, not a
-// separate namespace.
-const { getSummaryPath, projectNameFromCwd } = require("./lib/cache-paths");
+// -- Codex cache lives in its own sub-tree (codex/) under the shared base, so a
+// tree walk on one host can never pick up the other's sessions. A stale/foreign
+// summary.json at the Codex path must still not be misread as a valid Codex
+// cache: isCodexCacheValid checks the `host` discriminator too.
+const { projectNameFromCwd } = require("./lib/cache-paths");
 const projectName = projectNameFromCwd(workCwd);
-const summaryPath = path.join(fakeHome, ".claude", "super-token-saver-data", projectName, sess1Meta.id, "summary.json");
-check("Codex session cache lives in the same tree Claude sessions use (getSessionDir), not a parallel namespace", fs.existsSync(summaryPath), true);
+const summaryPath = path.join(fakeHome, ".claude", "super-token-saver-data", "codex", projectName, sess1Meta.id, "summary.json");
+check("Codex session cache lives under the codex/ sub-tree of the shared base", fs.existsSync(summaryPath), true);
+check("no Codex entry leaked into the Claude tree", fs.existsSync(path.join(fakeHome, ".claude", "super-token-saver-data", projectName, sess1Meta.id)), false);
 const cachedSummary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
 check("cached Codex summary is tagged with its host", cachedSummary.host, "codex");
 const beforeMtime = fs.statSync(summaryPath).mtime;

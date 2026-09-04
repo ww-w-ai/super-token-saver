@@ -60,7 +60,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { buildGlobalWindowMap, buildGlobalTsMapper, FIVE_HOURS_S } = require('./lib/window-utils');
-const { listProjects, listSessions, listSubagents, getTimelinePath, getSummaryPath, getRatelimitPath, getSubagentTimelinePath, getSubagentSummaryPath, getCompactPath, migrateFromYYMM, CACHE_BASE: CACHE_DIR } = require('./lib/cache-paths');
+const { forHost, migrateFromYYMM, extractProjectName, projectNameFromCwd, CACHE_BASE: CACHE_DIR } = require('./lib/cache-paths');
 const { PLAN_INFO: PLAN_INFO_ALL, CODEX_PLAN_INFO, resolveCodexPlanChoice } = require('./lib/plan-info');
 const { round2 } = require('./lib/format');
 const { SUPPORTED_LOCALES, resolveLocale } = require('./lib/locale');
@@ -104,6 +104,8 @@ for (let i = 0; i < args.length; i++) {
 // Anthropic-pricing math, use a dynamic rate-limit window instead of
 // FIVE_HOURS_S, and mark cost as absent rather than zero in REPORT_DATA.
 const isCodex = hostArg === 'codex';
+// Every cache lookup below goes through the host's own sub-tree.
+const hostPaths = forHost(isCodex ? 'codex' : 'claude');
 
 // Every cost figure in this file is computed by multiplying raw token counts
 // by getRates(model) — Codex model ids (e.g. "gpt-5.6-sol") aren't in
@@ -293,7 +295,7 @@ function getParentReqIds(parentSessionId) {
   if (parentReqIdSets.has(parentSessionId)) return parentReqIdSets.get(parentSessionId);
   const info = _sessionProjectMap.get(parentSessionId);
   if (!info) { parentReqIdSets.set(parentSessionId, null); return null; }
-  const csvPath = getTimelinePath(info.proj, parentSessionId);
+  const csvPath = hostPaths.getTimelinePath(info.proj, parentSessionId);
   if (!csvPath || !fs.existsSync(csvPath)) { parentReqIdSets.set(parentSessionId, null); return null; }
   const set = new Set();
   try {
@@ -318,9 +320,9 @@ function readTimelineCsv(sessionId) {
   if (info.parentSessionId) {
     // Subagent: timeline lives under parent session's subagents/ dir
     // Use agentDirName (without "agent-" prefix) for the actual directory path
-    csvPath = getSubagentTimelinePath(info.proj, info.parentSessionId, info.agentDirName);
+    csvPath = hostPaths.getSubagentTimelinePath(info.proj, info.parentSessionId, info.agentDirName);
   } else {
-    csvPath = getTimelinePath(info.proj, sessionId);
+    csvPath = hostPaths.getTimelinePath(info.proj, sessionId);
   }
   if (!csvPath || !fs.existsSync(csvPath)) return [];
   const content = fs.readFileSync(csvPath, 'utf8').trim();
@@ -461,7 +463,7 @@ function readTimelineCsv(sessionId) {
 // rows (CC's runForkedAgent writes FULL parent history into acompact sidechain).
 // Remaining rows = genuinely new calls (usually the single summary call).
 function readAcompactAggregate(proj, parentSessionId, agentDirName) {
-  const csvPath = getSubagentTimelinePath(proj, parentSessionId, agentDirName);
+  const csvPath = hostPaths.getSubagentTimelinePath(proj, parentSessionId, agentDirName);
   if (!csvPath || !fs.existsSync(csvPath)) return null;
   const content = fs.readFileSync(csvPath, 'utf8').trim();
   const lines = content.split('\n');
@@ -510,6 +512,42 @@ function readAcompactAggregate(proj, parentSessionId, agentDirName) {
   };
 }
 
+// Sessions the analyzer could not see because their transcript is gone, but
+// whose analysis is still cached, are counted from the cache. Claude Code
+// deletes transcripts after its retention period (and some vanish earlier);
+// the spend happened either way, and summary.json is the same object the
+// analyzer would have returned. Scoped to the report's own date range so a
+// stale cache cannot widen the period.
+{
+  const known = new Set(raw.sessions.map((s) => s.sessionId));
+  const fromTs = raw.summary && raw.summary.dateRange && raw.summary.dateRange.from
+    ? new Date(raw.summary.dateRange.from).getTime() : 0;
+  const wantHost = isCodex ? 'codex' : 'claude';
+  const readSummary = (p) => {
+    try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; }
+  };
+  const accept = (s) => s && s.sessionId && !known.has(s.sessionId)
+    && (s.host || 'claude') === wantHost
+    && s.tokens && (!fromTs || !s.lastTs || new Date(s.lastTs).getTime() >= fromTs);
+  let added = 0;
+  const projects = projectFilter ? [projectFilter] : hostPaths.listProjects();
+  for (const proj of projects) {
+    for (const sess of hostPaths.listSessions(proj)) {
+      if (known.has(sess) || isAcompactSessionId(sess)) continue;
+      const s = readSummary(hostPaths.getSummaryPath(proj, sess));
+      if (!accept(s)) continue;
+      raw.sessions.push(s); known.add(s.sessionId); added++;
+      for (const agent of hostPaths.listSubagents(proj, sess)) {
+        if (isAcompactAgent(agent)) continue;
+        const a = readSummary(hostPaths.getSubagentSummaryPath(proj, sess, agent));
+        if (!accept(a)) continue;
+        raw.sessions.push(a); known.add(a.sessionId); added++;
+      }
+    }
+  }
+  if (added) process.stderr.write(`[build-report] ${added} cache-only session(s) counted (transcript no longer on disk)\n`);
+}
+
 // Build session lookup
 const sessionMap = new Map();
 for (const s of raw.sessions) {
@@ -521,15 +559,15 @@ migrateFromYYMM();
 
 // Populate _sessionProjectMap by scanning new project/session structure
 {
-  const projects = projectFilter ? [projectFilter] : listProjects();
+  const projects = projectFilter ? [projectFilter] : hostPaths.listProjects();
   for (const proj of projects) {
-    const sessions = listSessions(proj);
+    const sessions = hostPaths.listSessions(proj);
     for (const sess of sessions) {
       _sessionProjectMap.set(sess, { proj });
       // Also map subagent IDs with parent session reference
-      // listSubagents() returns directory names (e.g. "a3f8c62d612b97b5a")
+      // hostPaths.listSubagents() returns directory names (e.g. "a3f8c62d612b97b5a")
       // but raw.sessions uses "agent-{id}" as sessionId — map both forms
-      const agents = listSubagents(proj, sess);
+      const agents = hostPaths.listSubagents(proj, sess);
       for (const agent of agents) {
         const info = { proj, parentSessionId: sess, agentDirName: agent };
         _sessionProjectMap.set(agent, info);
@@ -568,6 +606,36 @@ migrateFromYYMM();
         }
       }
     }
+  }
+}
+
+// Authoritative project for every analyzed session: the transcript path, which is
+// the same rule analyze-usage.js used to choose the cache dir. The directory scan
+// above is last-project-wins, and statusline-logger.sh creates
+// {proj}/{sid}/ratelimit.csv under every cwd a session `cd`s into, so a session
+// that moved across worktrees was mapped to a dir with no timeline.csv and its
+// entire cost vanished from the --all report (97 sessions, $7.2K over 26 days).
+for (const s of raw.sessions) {
+  if (isCodex) {
+    // Codex: filePath is the rollout under CODEX_HOME (no /projects/ segment);
+    // analyze-usage keys its cache dir by the hashed cwd, and every Codex
+    // rollout — subagents included — is its own top-level session dir.
+    // A summary without cwd (should not happen) keeps whatever the directory scan found.
+    if (s.cwd) _sessionProjectMap.set(s.sessionId, { proj: projectNameFromCwd(s.cwd) });
+    continue;
+  }
+  if (!s.filePath) continue;
+  const proj = extractProjectName(s.filePath);
+  if (!proj) continue;
+  if (_subagentSep.test(s.filePath)) {
+    const parentSessionId = path.basename(s.filePath.split(_subagentSep)[0]);
+    const base = path.basename(s.filePath, '.jsonl');
+    const agentDirName = base.startsWith('agent-') ? base.slice(6) : base;
+    const info = { proj, parentSessionId, agentDirName };
+    _sessionProjectMap.set(agentDirName, info);
+    _sessionProjectMap.set('agent-' + agentDirName, info);
+  } else {
+    _sessionProjectMap.set(s.sessionId, { proj });
   }
 }
 
@@ -639,7 +707,7 @@ function readCompactAlerts(sessionId) {
   if (!sess) return [];
   const info = _sessionProjectMap.get(sessionId);
   if (!info) return [];
-  const compactPath = getCompactPath(info.proj, sessionId, false);
+  const compactPath = hostPaths.getCompactPath(info.proj, sessionId, false);
   if (!fs.existsSync(compactPath)) return [];
 
   // Old-format compacts are regenerated by generateMissingCompacts (version check).
@@ -1414,11 +1482,11 @@ summary.totalCost = round2(tb.input.cost + tb.output.cost + tb.cacheCreate1h.cos
 // 2b. 5H alerts from ratelimit CSVs (optional, statusline users only)
 const fiveHAlerts = [];
 if (!isCodex) try {
-  const rlProjects = projectFilter ? [projectFilter] : listProjects();
+  const rlProjects = projectFilter ? [projectFilter] : hostPaths.listProjects();
   for (const proj of rlProjects) {
-    const rlSessions = listSessions(proj);
+    const rlSessions = hostPaths.listSessions(proj);
     for (const sess of rlSessions) {
-      const rlPath = getRatelimitPath(proj, sess);
+      const rlPath = hostPaths.getRatelimitPath(proj, sess);
       if (!fs.existsSync(rlPath)) continue;
       const lines = fs.readFileSync(rlPath, 'utf8').trim().split('\n');
       for (let i = 1; i < lines.length; i++) {

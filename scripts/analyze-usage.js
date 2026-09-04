@@ -40,6 +40,8 @@ const os = require("os");
 
 const {
   CACHE_BASE: CACHE_DIR,
+  CODEX_BASE,
+  forHost,
   extractProjectName,
   getSessionDir,
   getTimelinePath,
@@ -1233,15 +1235,17 @@ async function mainCodex(opts) {
     ? allSessions.filter((m) => projectNameFromCwd(m.cwd || "unknown") === opts.project)
     : allSessions;
 
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  // Codex cache lives in its own sub-tree (codex/), never beside Claude sessions.
+  const codexPaths = forHost("codex");
+  fs.mkdirSync(CODEX_BASE, { recursive: true });
 
   const results = [];
   let allRateLimitSamples = [];
   for (const meta of sessions) {
     if (meta.mtime < cutoff) continue;
     const projectName = projectNameFromCwd(meta.cwd || "unknown");
-    const summaryPath = getSummaryPath(projectName, meta.sessionId);
-    const timelinePath = getTimelinePath(projectName, meta.sessionId);
+    const summaryPath = codexPaths.getSummaryPath(projectName, meta.sessionId);
+    const timelinePath = codexPaths.getTimelinePath(projectName, meta.sessionId);
 
     if (!opts.force && isCodexCacheValid(summaryPath, meta.mtime)) {
       try {
