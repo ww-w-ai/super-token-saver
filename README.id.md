@@ -378,17 +378,16 @@ Saat instruksi git native CC masih aktif di mesin Anda, super-token-saver menamp
 
 TTL cache prompt Claude Code adalah 1 jam. Pergi lebih lama dari itu dan cache kedaluwarsa. Pesan berikutnya mengirim ulang seluruh konteks dengan harga penuh. Pada 900K token, itu $9 dalam sekali tembak.
 
-Token Guardian mengingat kapan respons terakhir tiba. Jika lebih dari 3.590 detik telah berlalu (TTL dikurangi buffer 10 detik), ia turun tangan. Secara default ia **memperingatkan**: prompt tetap diteruskan, dan Claude membuka jawabannya dengan satu baris yang menyebutkan bahwa cache sudah kedaluwarsa, giliran ini ditagih sebagai pengiriman ulang penuh, dan setelah jeda satu jam atau lebih jalan yang lebih murah adalah `/clear` → `/s-continue`.
-
-**Mengapa warn menjadi default.** Versi sebelumnya memblokir prompt dan menampilkan peringatan di bawah. Itu berhasil di terminal. Di Remote Control tidak: pesan blokir dari hook dirender secara lokal sebagai pesan sistem yang tidak pernah diterima klien remote, sehingga prompt yang dikirim begitu saja menghilang tanpa penjelasan. Jawaban Claude *memang* diteruskan, jadi sekarang peringatan itu menumpang di sana. Kami mengubah default ini demi orang-orang yang menjalankan sesinya dari jarak jauh.
-
-Jika Anda kebanyakan bekerja di terminal lokal dan ingin penghentian tegas itu kembali:
+Token Guardian mengingat kapan respons terakhir tiba. Jika lebih dari 3.590 detik telah berlalu (TTL dikurangi buffer 10 detik), ia bisa turun tangan. **Ia nonaktif secara default, karena Remote Control.** Pesan blokir dari hook dirender secara lokal sebagai pesan sistem yang tidak pernah diterima klien remote, sehingga pengguna remote melihat prompt-nya menghilang tanpa penjelasan. Daripada mengirimkan pelindung yang berperilaku berbeda tergantung di mana Anda berada, kami menonaktifkannya. Ketika Remote Control mulai meneruskan pesan hook, default akan aktif kembali. Sampai saat itu, aktifkan sendiri dengan salah satu dari dua mode.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude menyebutkan kedaluwarsa di baris pertamanya
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # prompt ditolak satu kali dengan pesan di bawah
 ```
 
-Dalam mode block, prompt ditolak satu kali dengan pesan di bawah. Kirim lagi dan ia akan lewat. `off` menonaktifkan pemeriksaan ini sepenuhnya.
+Dalam mode `warn`, prompt tetap diteruskan, dan Claude membuka jawabannya dengan satu baris yang menyebutkan bahwa cache sudah kedaluwarsa, giliran ini ditagih sebagai pengiriman ulang seluruh konteks, dan setelah jeda satu jam atau lebih, `/clear` → `/s-continue` adalah cara yang lebih murah untuk kembali. Yang ini memang sampai ke klien remote, karena jawaban Claude diteruskan meskipun pesan hook tidak.
+
+Dalam mode `block`, prompt ditolak satu kali dengan pesan di bawah. Kirim lagi dan ia akan lewat. Gunakan ini di terminal lokal saat Anda menginginkan penghentian tegas.
 
 ```
 🚨 Cache kedaluwarsa (68m 23s tidak aktif)

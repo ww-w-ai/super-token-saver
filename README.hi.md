@@ -378,17 +378,16 @@ Typical interactive sessions में, commit/PR instructions (1.7K tok) **ह�
 
 Claude Code के prompt cache का TTL 1 घंटा है। एक घंटे से ज़्यादा दूर जाएं और कैश expire हो जाता है। आपका अगला message पूरा कॉन्टेक्स्ट पूरी कीमत पर री-सेंड करता है। 900K tokens पर, यह एक बार में $9 है।
 
-Token Guardian याद रखता है कि आखिरी reply कब आया। अगर 3,590 सेकंड से ज़्यादा बीत गए (TTL minus 10-second buffer), तो यह step in करता है। Default में यह **warn** करता है: prompt through हो जाता है, और Claude अपने reply की शुरुआत एक line से करता है जो बताती है कि कैश expire हो चुका था, यह turn पूरे re-send के रूप में bill हुआ, और एक घंटे या उससे ज़्यादा के break के बाद सस्ता रास्ता `/clear` → `/s-continue` है।
-
-**warn default क्यों है।** पहले के versions prompt को ब्लॉक करते थे और नीचे वाली warning दिखाते थे। Terminal में यह काम करता है। Remote Control के तहत नहीं: hook का block message locally एक system message के रूप में render होता है जो remote client को कभी नहीं मिलता, तो prompt बिना किसी explanation के बस गायब हो जाता था। Claude का reply *forward* होता है, इसलिए अब warning उसी पर सवार होकर आती है। हमने default उन लोगों के लिए बदला जो अपने sessions remotely चलाते हैं।
-
-अगर आप ज़्यादातर local terminal में काम करते हैं और hard stop वापस चाहते हैं:
+Token Guardian याद रखता है कि आखिरी reply कब आया। अगर 3,590 सेकंड से ज़्यादा बीत गए (TTL minus 10-second buffer), तो यह step in कर सकता है। **यह डिफ़ॉल्ट रूप से off है, Remote Control की वजह से।** hook का block message locally एक system message के रूप में render होता है जो remote client को कभी नहीं मिलता, तो एक remote user को prompt बिना किसी explanation के गायब होता दिखा। यह तय करने के बजाय कि आप कहां बैठे हैं उसके हिसाब से अलग व्यवहार करने वाला guard भेजें, हमने इसे off कर दिया। जब Remote Control hook messages forward करना शुरू करेगा, तो default वापस on हो जाएगा। तब तक, इसे दो modes में से किसी एक से खुद on करें।
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude अपनी पहली line में expiry का ज़िक्र करता है
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # prompt एक बार नीचे वाले message के साथ refuse होता है
 ```
 
-block mode में prompt एक बार नीचे वाले message के साथ refuse होता है। दोबारा भेजें और वह through हो जाएगा। `off` check को पूरी तरह disable करता है।
+`warn` में prompt through हो जाता है, और Claude अपने reply की शुरुआत एक line से करता है जो बताती है कि cache expire हो चुका था, यह turn पूरे context के re-send के रूप में bill हुआ, और एक घंटे या उससे ज़्यादा के break के बाद `/clear` → `/s-continue` सस्ता रास्ता है। यह remote client तक पहुंचती है, क्योंकि Claude का reply forward होता है भले ही hook messages न हों।
+
+`block` में prompt एक बार नीचे वाले message के साथ refuse होता है। दोबारा भेजें और वह through हो जाएगा। इसे local terminal में इस्तेमाल करें जब आपको hard stop चाहिए।
 
 ```
 🚨 Cache expired (68m 23s idle)

@@ -5,17 +5,20 @@
 # Detects that the 1-hour prompt cache has likely expired and either warns or blocks,
 # so the user can /clear → /s-continue instead of paying full re-cache cost.
 #
-# Mode: CC_TOKEN_SAVER_CACHE_GUARD = warn (default) | block | off
+# Mode: CC_TOKEN_SAVER_CACHE_GUARD = off (default) | warn | block
+#   off   — never check. Default because of Remote Control: a hook "block" is
+#           rendered locally and never reaches the remote client, so the guard behaved
+#           differently depending on where the user sat. Re-enable the default once
+#           Remote Control forwards hook messages.
 #   warn  — let the prompt through, but attach additionalContext so Claude opens its
-#           reply by telling the user the cache had expired and this turn re-sent the
-#           full context. Default because a hook "block" is rendered as a local
-#           system/informational message that Remote Control never forwards
-#           (bridge/bridgeMessaging.ts isEligibleBridgeMessage) — a remote user saw the
-#           prompt vanish with no explanation. Claude's reply IS forwarded.
-#   block — the original behaviour: refuse the prompt once with a localized warning;
-#           re-sending the same prompt goes through. Saves the $9 re-send, but only a
-#           local terminal sees why the prompt was refused.
-#   off   — never check.
+#           reply with one line saying the cache had expired and this turn paid for
+#           the full context. Works under Remote Control, where a hook "block" is
+#           rendered as a local system/informational message the remote client never
+#           receives (bridge/bridgeMessaging.ts isEligibleBridgeMessage); Claude's
+#           reply IS forwarded.
+#   block — refuse the prompt once with a localized warning; re-sending the same
+#           prompt goes through. Saves the $9 re-send, but only a local terminal sees
+#           why the prompt was refused.
 #
 # How it works:
 #   0. Machine-injected prompts (task notifications etc.) are exempt — see below
@@ -171,7 +174,7 @@ if [ "$ELAPSED" -lt 3590 ]; then
 fi
 
 # 3590s+ → cache expired (3600s TTL - 10s buffer). Mode decides what happens.
-MODE="${CC_TOKEN_SAVER_CACHE_GUARD:-warn}"
+MODE="${CC_TOKEN_SAVER_CACHE_GUARD:-off}"
 case "$MODE" in
   block)
     MSG=$(get_expired_msg "$MINS" "$SECS")
@@ -180,12 +183,13 @@ case "$MODE" in
     MSG_JSON=$(echo "$MSG" | sed 's/"/\\"/g')
     echo "{\"decision\":\"block\",\"reason\":\"${MSG_JSON}\"}"
     ;;
-  off)
-    echo '{"decision":"approve"}'
+  warn)
+    # warn. Model-facing, so English; Claude answers in the user's language.
+    CTX="[super-token-saver] The prompt cache expired: the last reply was ${MINS}m ${SECS}s ago and the cache TTL is 1 hour, so this turn paid for the whole context again. Open your reply with ONE short line in the user's language that says this the way a colleague would mention it in passing, not as a system notice. Meaning to convey: idle ${MINS} min, cache gone, this turn cost the full context; next time after an hour-plus break, /clear then /s-continue is the cheap way back. English example of the tone: 'Heads-up: ${MINS} min idle, so the cache was gone and this turn paid for the whole context. After an hour-plus break, /clear then /s-continue is cheaper.' Do not translate that literally; write it naturally. Then answer the prompt normally. Do not repeat this notice in later turns."
+    echo "{\"decision\":\"approve\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"${CTX}\"}}"
     ;;
   *)
-    # warn (default). Model-facing, so English; Claude answers in the user's language.
-    CTX="[super-token-saver] The prompt cache expired: the last reply was ${MINS}m ${SECS}s ago and the cache TTL is 1 hour. This turn therefore re-sent the full context at full price. Open your reply with ONE short line, in the user's language, saying the cache had expired and this turn was billed as a full re-send, and that after a break of an hour or more the cheaper path is /clear then /s-continue. Then answer the prompt normally. Do not repeat this notice in later turns."
-    echo "{\"decision\":\"approve\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"${CTX}\"}}"
+    # off (default) and any unknown value: never check.
+    echo '{"decision":"approve"}'
     ;;
 esac

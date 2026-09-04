@@ -378,17 +378,16 @@ Apabila arahan git asli CC masih aktif pada mesin anda, super-token-saver menunj
 
 TTL cache prompt Claude Code ialah 1 jam. Pergi lebih lama daripada itu dan ia tamat tempoh. Mesej anda seterusnya menghantar semula keseluruhan konteks pada harga penuh. Pada 900K token, itu $9 sekali gus.
 
-Token Guardian mengingati bila respons terakhir diterima. Jika lebih daripada 3,590 saat telah berlalu (TTL tolak penimbal 10 saat), ia bertindak. Secara lalai ia **memberi amaran**: prompt tetap diteruskan, dan Claude membuka responsnya dengan satu baris menyatakan cache telah tamat tempoh, giliran ini dicaj sebagai penghantaran semula penuh, dan selepas rehat sejam atau lebih laluan yang lebih murah ialah `/clear` → `/s-continue`.
-
-**Mengapa `warn` adalah lalai.** Versi terdahulu menyekat prompt dan menunjukkan amaran di bawah. Itu berfungsi dalam terminal. Di bawah Remote Control ia tidak berfungsi: mesej sekatan daripada hook dipaparkan secara tempatan sebagai mesej sistem yang tidak pernah diterima oleh klien jauh, jadi prompt hanya hilang tanpa sebarang penjelasan. Respons Claude *dihantar*, jadi amaran kini menumpang pada respons itu sebaliknya. Kami menukar lalai untuk mereka yang mengendalikan sesi mereka dari jauh.
-
-Jika anda kebanyakannya bekerja dalam terminal tempatan dan mahukan sekatan keras semula:
+Token Guardian mengingati bila respons terakhir diterima. Jika lebih daripada 3,590 saat telah berlalu (TTL tolak penimbal 10 saat), ia boleh bertindak. **Ia dimatikan secara lalai, kerana Remote Control.** Mesej sekatan daripada hook dipaparkan secara tempatan sebagai mesej sistem yang tidak pernah diterima oleh klien jauh, jadi pengguna jauh melihat prompt hilang tanpa sebarang penjelasan. Daripada menghantar ciri pelindung yang berkelakuan berbeza bergantung di mana anda berada, kami mematikannya. Apabila Remote Control mula menghantar mesej hook, lalai itu akan dihidupkan semula. Sehingga itu, hidupkan sendiri menggunakan salah satu daripada dua mod.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude menyebut tamat tempoh dalam baris pertama responsnya
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # prompt ditolak sekali dengan mesej di bawah
 ```
 
-Dalam mod block, prompt ditolak sekali dengan mesej di bawah. Hantar semula dan ia akan melalui. `off` melumpuhkan pemeriksaan sepenuhnya.
+Dalam mod `warn`, prompt diteruskan, dan Claude membuka responsnya dengan satu baris menyatakan cache telah tamat tempoh, giliran ini dicaj untuk keseluruhan konteks, dan selepas rehat sejam atau lebih laluan yang lebih murah untuk kembali ialah `/clear` → `/s-continue`. Ini sampai kepada klien jauh, kerana respons Claude dihantar walaupun mesej hook tidak.
+
+Dalam mod `block`, prompt ditolak sekali dengan mesej di bawah. Hantar semula dan ia akan melalui. Gunakannya dalam terminal tempatan apabila anda mahukan sekatan keras.
 
 ```
 🚨 Cache expired (68m 23s idle)

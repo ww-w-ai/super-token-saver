@@ -386,17 +386,16 @@ Når CC:s innebygde git-instruksjoner fortsatt er aktive på maskinen din, viser
 
 Claude Codes promptcache lever i 1 time. Er du borte lenger enn det, utløper den. Neste melding sender hele konteksten på nytt til full pris. Ved 900K tokens er det $9 i ett skudd.
 
-Token Guardian husker når det siste svaret kom. Hvis det har gått mer enn 3 590 sekunder (TTL-en minus 10 sekunders buffer), griper den inn. Som standard **advarer** den (`warn`): forespørselen går gjennom, og Claude åpner svaret med én linje som sier at cachen hadde utløpt, at denne turen ble fakturert som en full gjenoversendelse, og at etter en pause på en time eller mer er den billigste veien `/clear` → `/s-continue`.
-
-**Hvorfor `warn` er standard.** Tidligere versjoner blokkerte forespørselen og viste advarselen under. Det fungerer i en terminal. Under fjernstyring (Remote Control) gjør det ikke det: en hooks blokkeringsmelding vises lokalt som en systemmelding som den eksterne klienten aldri mottar, så forespørselen bare forsvant uten forklaring. Claudes svar *blir* videresendt, så advarselen rir nå på det i stedet. Vi endret standarden for dem som styrer øktene sine eksternt.
-
-Hvis du hovedsakelig jobber i en lokal terminal og vil ha den harde stoppen tilbake:
+Token Guardian husker når siste svar kom inn. Hvis det har gått mer enn 3 590 sekunder (TTL-en minus 10 sekunders buffer), kan den gripe inn. **Den er avslått som standard, på grunn av fjernstyring (Remote Control).** En hooks blokkeringsmelding vises lokalt som en systemmelding som den eksterne klienten aldri mottar, så en ekstern bruker så forespørselen bare forsvinne uten forklaring. Fremfor å levere en vakt som oppfører seg ulikt avhengig av hvor du sitter, slo vi den av. Når Remote Control begynner å videresende hook-meldinger, slås standarden på igjen. Frem til da slår du den på selv med én av to moduser.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude nevner utløpet i den første linjen
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # forespørselen avvises én gang med meldingen under
 ```
 
-I `block`-modus avvises forespørselen én gang med meldingen under. Send den på nytt, og den går gjennom. `off` slår av sjekken helt.
+I `warn` går forespørselen gjennom, og Claude åpner svaret med én linje som sier at cachen hadde utløpt, at denne turen betalte for hele konteksten, og at etter en pause på en time eller mer er `/clear` → `/s-continue` den billigste veien tilbake. Denne når frem til en ekstern klient, fordi Claudes svar videresendes selv om hook-meldinger ikke gjør det.
+
+I `block` avvises forespørselen én gang med meldingen under. Send den på nytt, og den går gjennom. Bruk den i en lokal terminal når du vil ha den harde stoppen.
 
 ```
 🚨 Cache expired (68m 23s idle)

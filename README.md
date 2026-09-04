@@ -382,17 +382,16 @@ While CC's native git instructions are still active on your machine, super-token
 
 Claude Code's prompt cache lives for 1 hour. Step away longer than that and it expires. Your next message re-sends the entire context at full price. At 900K tokens, that's $9 in one shot.
 
-Token Guardian remembers when the last reply arrived. If more than 3,590 seconds have passed (the TTL minus a 10-second buffer), it steps in. By default it **warns**: the prompt goes through, and Claude opens its reply with one line saying the cache had expired, that this turn was billed as a full re-send, and that after a break of an hour or more the cheaper path is `/clear` → `/s-continue`.
-
-**Why warn is the default.** Earlier versions blocked the prompt and showed the warning below. That works in a terminal. Under Remote Control it doesn't: a hook's block message is rendered locally as a system message the remote client never receives, so the prompt just vanished with no explanation. Claude's reply *is* forwarded, so the warning now rides on that instead. We changed the default for people who drive their sessions remotely.
-
-If you mostly work in a local terminal and want the hard stop back:
+Token Guardian remembers when the last reply arrived. If more than 3,590 seconds have passed (the TTL minus a 10-second buffer), it can step in. **It is off by default, because of Remote Control.** A hook's block message is rendered locally as a system message the remote client never receives, so a remote user saw the prompt vanish with no explanation. Rather than ship a guard that behaves differently depending on where you sit, we turned it off. When Remote Control starts forwarding hook messages, the default comes back on. Until then, turn it on yourself with one of two modes.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude mentions the expiry in its first line
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # the prompt is refused once with the message below
 ```
 
-In block mode the prompt is refused once with the message below. Send it again and it goes through. `off` disables the check entirely.
+In `warn` the prompt goes through, and Claude opens its reply with one line saying the cache had expired, this turn paid for the whole context, and after a break of an hour or more `/clear` → `/s-continue` is the cheaper way back. This one does reach a remote client, because Claude's reply is forwarded even though hook messages are not.
+
+In `block` the prompt is refused once with the message below. Send it again and it goes through. Use it in a local terminal when you want the hard stop.
 
 ```
 🚨 Cache expired (68m 23s idle)

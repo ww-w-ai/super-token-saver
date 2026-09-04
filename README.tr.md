@@ -380,17 +380,16 @@ Makinenizde CC yerel git talimatları hâlâ etkinken, super-token-saver oturum 
 
 Claude Code'un prompt cache'i 1 saat yaşar. Bundan daha uzun süre uzaklaşırsanız sona erer. Bir sonraki mesajınız tüm context'i tam fiyatıyla yeniden gönderir. 900K token'da bu tek seferde $9 demektir.
 
-Token Guardian, son yanıtın ne zaman geldiğini hatırlar. 3.590 saniyeden fazla (TTL eksi 10 saniyelik tampon) geçmişse devreye girer. Varsayılan olarak **uyarır**: prompt geçer ve Claude yanıtına tek bir satırla başlar — cache'in sona erdiğini, bu turun tam bir yeniden gönderim olarak faturalandırıldığını ve bir saat veya daha uzun bir aradan sonra daha ucuz yolun `/clear` → `/s-continue` olduğunu söyler.
-
-**Neden varsayılan uyarı.** Önceki sürümler prompt'u engelliyor ve aşağıdaki uyarıyı gösteriyordu. Bu bir terminalde işe yarar. Remote Control altında yaramaz: bir hook'un engelleme mesajı yerel olarak, uzak istemcinin asla almadığı bir sistem mesajı biçiminde render edilir; bu yüzden prompt hiçbir açıklama olmadan yok oluyordu. Claude'un yanıtı *ise* iletilir, bu nedenle uyarı artık onun üzerinden gidiyor. Varsayılanı, oturumlarını uzaktan yönetenler için değiştirdik.
-
-Çoğunlukla yerel bir terminalde çalışıyor ve sert durdurmayı geri istiyorsanız:
+Token Guardian, son yanıtın ne zaman geldiğini hatırlar. 3.590 saniyeden fazla (TTL eksi 10 saniyelik tampon) geçmişse devreye girebilir. **Remote Control yüzünden varsayılan olarak kapalıdır.** Bir hook'un engelleme mesajı yerel olarak, uzak istemcinin asla almadığı bir sistem mesajı biçiminde render edilir; bu yüzden uzaktaki bir kullanıcı prompt'un hiçbir açıklama olmadan yok olduğunu görmüştü. Nerede oturduğunuza göre farklı davranan bir koruma sunmak yerine, onu kapattık. Remote Control hook mesajlarını iletmeye başladığında, varsayılan yeniden açılacak. O zamana kadar, iki moddan biriyle kendiniz açabilirsiniz.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude süresinin dolduğunu ilk satırında belirtir
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # prompt aşağıdaki mesajla bir kez reddedilir
 ```
 
-Block modunda prompt, aşağıdaki mesajla bir kez reddedilir. Yeniden gönderin, geçecektir. `off` denetimi tamamen devre dışı bırakır.
+`warn` modunda prompt geçer ve Claude yanıtına tek bir satırla başlar — cache'in sona erdiğini, bu turun tam bir yeniden gönderim olarak faturalandırıldığını ve bir saat veya daha uzun bir aradan sonra daha ucuz yolun `/clear` → `/s-continue` olduğunu söyler. Bu mesaj uzak istemciye gerçekten ulaşır, çünkü hook mesajları iletilmese de Claude'un yanıtı iletilir.
+
+`block` modunda prompt, aşağıdaki mesajla bir kez reddedilir. Yeniden gönderin, geçecektir. Sert durdurmayı istediğinizde bunu yerel bir terminalde kullanın.
 
 ```
 🚨 Cache expired (68m 23s idle)

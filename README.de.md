@@ -384,17 +384,16 @@ Wenn CCs native Git-Anweisungen auf deinem Rechner noch aktiv sind, zeigt super-
 
 Der Prompt-Cache von Claude Code lebt 1 Stunde. Bleibst du länger weg, läuft er ab. Deine nächste Nachricht sendet den gesamten Kontext zum vollen Preis neu. Bei 900.000 Tokens sind das $9 auf einen Schlag.
 
-Token Guardian merkt sich, wann die letzte Antwort eingetroffen ist. Sind mehr als 3.590 Sekunden vergangen (TTL minus 10 Sekunden Puffer), greift es ein. Standardmäßig **warnt** es: Der Prompt geht durch, und Claude beginnt seine Antwort mit einer Zeile, die sagt, dass der Cache abgelaufen war, dass dieser Turn als volle Neuübertragung abgerechnet wurde, und dass nach einer Pause von einer Stunde oder mehr der günstigere Weg `/clear` → `/s-continue` ist.
-
-**Warum `warn` der Standard ist.** Frühere Versionen blockierten den Prompt und zeigten die Warnung unten. Das funktioniert im Terminal. Unter Remote Control nicht: Die Block-Nachricht eines Hooks wird lokal als Systemnachricht gerendert, die der Remote-Client nie erhält — der Prompt verschwand also ohne jede Erklärung. Claudes Antwort *wird* dagegen weitergeleitet, also reitet die Warnung jetzt darauf mit. Wir haben den Standard für alle geändert, die ihre Sessions remote steuern.
-
-Wenn du hauptsächlich im lokalen Terminal arbeitest und den harten Stopp zurückwillst:
+Token Guardian merkt sich, wann die letzte Antwort eingetroffen ist. Sind mehr als 3.590 Sekunden vergangen (TTL minus 10 Sekunden Puffer), kann es eingreifen. **Standardmäßig ist es deaktiviert, wegen Remote Control.** Die Block-Nachricht eines Hooks wird lokal als Systemnachricht gerendert, die der Remote-Client nie erhält — ein Remote-Nutzer sah den Prompt also ohne jede Erklärung verschwinden. Statt eines Guards, der sich je nach Standort unterschiedlich verhält, haben wir ihn abgeschaltet. Sobald Remote Control Hook-Nachrichten weiterleitet, kommt der Standard zurück. Bis dahin schaltest du ihn selbst ein — mit einem von zwei Modi.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude erwähnt den Ablauf in der ersten Zeile
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # der Prompt wird einmal mit der Meldung unten abgelehnt
 ```
 
-Im Block-Modus wird der Prompt einmal mit der Meldung unten abgelehnt. Schick ihn erneut ab und er geht durch. `off` deaktiviert die Prüfung komplett.
+Im Modus `warn` geht der Prompt durch, und Claude beginnt seine Antwort mit einer Zeile, die sagt, dass der Cache abgelaufen war, dass dieser Turn als volle Neuübertragung des Kontexts abgerechnet wurde, und dass nach einer Pause von einer Stunde oder mehr der günstigere Weg zurück `/clear` → `/s-continue` ist. Diese erreicht tatsächlich einen Remote-Client, denn Claudes Antwort wird weitergeleitet, auch wenn Hook-Nachrichten es nicht sind.
+
+Im Modus `block` wird der Prompt einmal mit der Meldung unten abgelehnt. Schick ihn erneut ab und er geht durch. Nutze diesen Modus in einem lokalen Terminal, wenn du den harten Stopp willst.
 
 ```
 🚨 Cache expired (68m 23s idle)

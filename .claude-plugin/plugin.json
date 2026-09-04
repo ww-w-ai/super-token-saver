@@ -1,6 +1,6 @@
 {
   "name": "super-token-saver",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "description": "45% cost reduction measured. Cache expiry prevention, SubTask auto-delegation, zero-cost context restoration, real-time cost dashboard. The only Claude Code plugin built from CC source analysis.",
   "author": {
     "name": "taekim34"

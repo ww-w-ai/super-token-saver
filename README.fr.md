@@ -378,17 +378,16 @@ Quand les instructions git natives de CC sont encore actives sur votre machine, 
 
 Le cache de prompts de Claude Code vit pendant 1 heure. Éloignez-vous plus longtemps et il expire. Votre prochain message renvoie tout le contexte au prix plein. Avec 900 000 tokens, c'est $9 d'un coup.
 
-Token Guardian se souvient de l'heure d'arrivée de la dernière réponse. Si plus de 3 590 secondes se sont écoulées (le TTL moins un tampon de 10 secondes), il intervient. Par défaut, il **avertit** : le prompt passe, et Claude ouvre sa réponse par une ligne indiquant que le cache avait expiré, que ce tour a été facturé comme un renvoi complet, et qu'après une pause d'une heure ou plus le chemin le moins cher est `/clear` → `/s-continue`.
-
-**Pourquoi l'avertissement est le mode par défaut.** Les versions précédentes bloquaient le prompt et affichaient l'avertissement ci-dessous. Cela fonctionne dans un terminal. Sous Remote Control, non : le message de blocage d'un hook est rendu localement comme un message système que le client distant ne reçoit jamais, si bien que le prompt disparaissait simplement sans explication. La réponse de Claude, elle, *est* transmise, donc l'avertissement s'appuie désormais sur elle. Nous avons changé le comportement par défaut pour les personnes qui pilotent leurs sessions à distance.
-
-Si vous travaillez surtout dans un terminal local et voulez retrouver l'arrêt strict :
+Token Guardian se souvient de l'heure d'arrivée de la dernière réponse. Si plus de 3 590 secondes se sont écoulées (le TTL moins un tampon de 10 secondes), il peut intervenir. **Il est désactivé par défaut, à cause de Remote Control.** Le message de blocage d'un hook est rendu localement comme un message système que le client distant ne reçoit jamais, si bien qu'un utilisateur distant voyait le prompt disparaître sans aucune explication. Plutôt que de livrer une protection qui se comporte différemment selon où vous êtes, nous l'avons désactivée. Quand Remote Control commencera à transmettre les messages des hooks, ce comportement par défaut reviendra. En attendant, activez-le vous-même avec l'un des deux modes.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude mentionne l'expiration dans sa première ligne
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # le prompt est refusé une fois avec le message ci-dessous
 ```
 
-En mode block, le prompt est refusé une fois avec le message ci-dessous. Renvoyez-le et il passe. `off` désactive complètement la vérification.
+En mode `warn`, le prompt passe, et Claude ouvre sa réponse par une ligne indiquant que le cache avait expiré, que ce tour a été facturé comme un renvoi complet du contexte, et qu'après une pause d'une heure ou plus, `/clear` → `/s-continue` est le chemin le moins cher pour reprendre. Celui-ci atteint bien un client distant, car la réponse de Claude est transmise même si les messages des hooks ne le sont pas.
+
+En mode `block`, le prompt est refusé une fois avec le message ci-dessous. Renvoyez-le et il passe. Utilisez-le dans un terminal local quand vous voulez l'arrêt strict.
 
 ```
 🚨 Cache expired (68m 23s idle)

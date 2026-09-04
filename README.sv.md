@@ -387,17 +387,16 @@ När CC:s inbyggda git-instruktioner fortfarande är aktiva på din maskin visar
 
 Promptcachens TTL i Claude Code är 1 timme. Gå bort längre än så och cachen går ut. Ditt nästa meddelande skickar om hela kontexten till fullt pris. Vid 900K tokens är det $9 på en gång.
 
-Token Guardian kommer ihåg när det senaste svaret kom. Om mer än 3 590 sekunder har gått (TTL minus en 10-sekundersbuffert) griper den in. Som standard **varnar** den: prompten går igenom, och Claude inleder sitt svar med en rad som säger att cachen hade gått ut, att den här turen fakturerades som en fullständig återsändning, och att den billigare vägen efter en paus på en timme eller mer är `/clear` → `/s-continue`.
-
-**Varför warn är standard.** Tidigare versioner blockerade prompten och visade varningen nedan. Det fungerar i en terminal. Under Remote Control gör det inte det: en hooks blockeringsmeddelande renderas lokalt som ett systemmeddelande som fjärrklienten aldrig tar emot, så prompten försvann bara utan förklaring. Claudes svar vidarebefordras *däremot*, så varningen följer nu med det i stället. Vi ändrade standardinställningen för dem som styr sina sessioner på distans.
-
-Om du mest arbetar i en lokal terminal och vill ha tillbaka det hårda stoppet:
+Token Guardian kommer ihåg när det senaste svaret kom. Om mer än 3 590 sekunder har gått (TTL minus en 10-sekundersbuffert) kan den gripa in. **Den är avstängd som standard, på grund av Remote Control.** Ett hooks blockeringsmeddelande renderas lokalt som ett systemmeddelande som fjärrklienten aldrig tar emot, så en fjärranvändare såg prompten försvinna utan förklaring. Istället för att leverera en spärr som beter sig olika beroende på var du sitter stängde vi av den. När Remote Control börjar vidarebefordra hook-meddelanden slås standardvärdet på igen. Fram tills dess slår du på den själv med ett av två lägen.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude nämner utgången i sin första rad
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # prompten avvisas en gång med meddelandet nedan
 ```
 
-I block-läge avvisas prompten en gång med meddelandet nedan. Skicka den igen och den går igenom. `off` stänger av kontrollen helt.
+I `warn` går prompten igenom, och Claude inleder sitt svar med en rad som säger att cachen hade gått ut, att den här turen fakturerades som en fullständig återsändning, och att den billigare vägen tillbaka efter en paus på en timme eller mer är `/clear` → `/s-continue`. Den här når faktiskt fram till en fjärrklient, eftersom Claudes svar vidarebefordras även om hook-meddelanden inte gör det.
+
+I `block` avvisas prompten en gång med meddelandet nedan. Skicka den igen så går den igenom. Använd det i en lokal terminal när du vill ha det hårda stoppet.
 
 ```
 🚨 Cache expired (68m 23s idle)

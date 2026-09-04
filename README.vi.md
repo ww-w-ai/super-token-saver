@@ -377,17 +377,16 @@ Khi hướng dẫn git gốc CC vẫn còn hoạt động trên máy của bạn
 
 Prompt cache của Claude Code tồn tại trong 1 giờ. Rời đi lâu hơn thế là nó hết hạn. Tin nhắn tiếp theo của bạn gửi lại toàn bộ ngữ cảnh với giá đầy đủ. Với 900K token, đó là $9 trong một lần.
 
-Token Guardian nhớ thời điểm phản hồi cuối cùng đến. Nếu đã qua hơn 3.590 giây (TTL trừ đi bộ đệm 10 giây), nó can thiệp. Theo mặc định nó **cảnh báo (warn)**: prompt vẫn đi qua, và Claude mở đầu phản hồi bằng một dòng cho biết cache đã hết hạn, lượt này bị tính phí như một lần gửi lại toàn bộ, và nếu nghỉ từ một giờ trở lên thì cách rẻ hơn là `/clear` → `/s-continue`.
-
-**Tại sao warn là mặc định.** Các phiên bản trước chặn prompt và hiển thị cảnh báo bên dưới. Cách đó hoạt động tốt trong terminal. Nhưng dưới Remote Control thì không: thông báo chặn của một hook được hiển thị cục bộ như một tin nhắn hệ thống mà client từ xa không bao giờ nhận được, nên prompt cứ thế biến mất mà không có lời giải thích nào. Phản hồi của Claude *thì có* được chuyển tiếp, vì vậy giờ cảnh báo được gửi kèm theo đó thay thế. Chúng tôi đổi mặc định vì những người điều khiển phiên làm việc của họ từ xa.
-
-Nếu bạn chủ yếu làm việc trong terminal cục bộ và muốn quay lại chế độ chặn cứng:
+Token Guardian nhớ thời điểm phản hồi cuối cùng đến. Nếu đã qua hơn 3.590 giây (TTL trừ đi bộ đệm 10 giây), nó có thể can thiệp. **Nhưng theo mặc định nó bị tắt, vì Remote Control.** Thông báo chặn của một hook được hiển thị cục bộ như một tin nhắn hệ thống mà client từ xa không bao giờ nhận được, nên một người dùng từ xa thấy prompt biến mất mà không có lời giải thích nào. Thay vì đưa ra một lớp bảo vệ hoạt động khác nhau tùy vào nơi bạn ngồi, chúng tôi đã tắt nó đi. Khi Remote Control bắt đầu chuyển tiếp được thông báo từ hook, mặc định sẽ bật trở lại. Cho đến lúc đó, bạn tự bật nó lên bằng một trong hai chế độ.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude nhắc đến việc hết hạn ngay dòng đầu phản hồi
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # prompt bị từ chối một lần với thông báo bên dưới
 ```
 
-Ở chế độ block, prompt bị từ chối một lần với thông báo bên dưới. Gửi lại lần nữa thì nó đi qua. `off` tắt hoàn toàn việc kiểm tra.
+Ở chế độ `warn`, prompt vẫn đi qua, và Claude mở đầu phản hồi bằng một dòng cho biết cache đã hết hạn, lượt này bị tính phí như một lần gửi lại toàn bộ, và nếu nghỉ từ một giờ trở lên thì cách rẻ hơn để quay lại là `/clear` → `/s-continue`. Thông báo này thực sự đến được client từ xa, vì phản hồi của Claude vẫn được chuyển tiếp dù thông báo từ hook thì không.
+
+Ở chế độ `block`, prompt bị từ chối một lần với thông báo bên dưới. Gửi lại lần nữa thì nó đi qua. Dùng chế độ này trong terminal cục bộ khi bạn muốn có sự dừng cứng.
 
 ```
 🚨 Cache expired (68m 23s idle)

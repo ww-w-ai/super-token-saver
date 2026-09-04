@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-09-04
+
+### Fixed: `/usage-view --all` counted about half the real total
+
+`statusline-logger.sh` writes a `ratelimit.csv` under every cwd a session visits, so one session
+left a folder under several projects. `build-report.js` let the last-sorted folder win, and that
+folder had no `timeline.csv`, so the session's cost became zero — 97 main sessions and $7.2K over
+26 days on one account. The project now resolves from the transcript path (the same rule
+`analyze-usage.js` uses to place the cache). Sessions whose transcript is gone but whose cache
+survives are counted too. Verified against an independent JSONL sum to within 0.13% on every token
+type. Gate: `scripts/test-session-project-map.js`.
+
+### Changed: Codex cache moved under `codex/`
+
+Codex and Claude Code caches shared one tree with identical filenames, so every tree-walking tool
+mixed the two hosts. Everything Codex now lives under `~/.claude/super-token-saver-data/codex/`
+(`cache-paths.forHost('codex')`); the Claude tree stays at the root. A one-time migration moves
+existing entries. Gate: `scripts/test-cache-host-split.js`.
+
+### Changed: Token Guardian is off unless you turn it on
+
+`CC_TOKEN_SAVER_CACHE_GUARD` now defaults to `off`. Under Remote Control a hook's block message is
+rendered locally and never reaches the remote client, so the guard behaved differently depending on
+where the user sat; it is off until Remote Control forwards hook messages, at which point the
+default returns. `warn` and `block` are unchanged but opt-in. The `warn` instruction was rewritten
+so the one-line notice reads like a passing remark in the user's language instead of a translated
+system message.
+
+### Added
+
+- `docs/RATE-LIMIT-BURN-METHOD.md`: how 5-hour-window burn is measured from the plugin's own cache,
+  and the controlled result that cache-read tokens consume the window at the same rate on Opus 5 and
+  Fable 5.1 (0.013 pt per million). The Fable cost report gets a price-basis line and an appendix.
+- `claude-opus-4-8` in `scripts/model-pricing.json` (official price page).
+
 ## [3.4.0] - 2026-09-04
 
 ### Changed: Token Guardian now warns by default instead of blocking

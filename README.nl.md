@@ -388,17 +388,16 @@ Wanneer de native git-instructies van CC nog steeds actief zijn op je machine, t
 
 De promptcache van Claude Code leeft 1 uur. Stap langer dan dat weg en de cache verloopt. Je volgende bericht stuurt de volledige context opnieuw met volle prijs. Bij 900K tokens is dat $9 in één keer.
 
-Token Guardian houdt bij wanneer de laatste reactie werd ontvangen. Als er meer dan 3.590 seconden zijn verstreken (de TTL minus een buffer van 10 seconden), grijpt het in. Standaard **waarschuwt** het: de prompt gaat door, en Claude opent zijn antwoord met één regel die zegt dat de cache was verlopen, dat deze beurt werd gefactureerd als een volledige herverzending, en dat na een pauze van een uur of langer het goedkopere pad `/clear` → `/s-continue` is.
-
-**Waarom waarschuwen de standaard is.** Eerdere versies blokkeerden de prompt en toonden de onderstaande waarschuwing. Dat werkt in een terminal. Onder Remote Control niet: het blokkeerbericht van een hook wordt lokaal weergegeven als een systeembericht dat de externe client nooit ontvangt, dus de prompt verdween gewoon zonder uitleg. Claude's antwoord wordt *wel* doorgestuurd, dus de waarschuwing rijdt daar nu op mee. We hebben de standaard veranderd voor mensen die hun sessies op afstand aansturen.
-
-Als je vooral in een lokale terminal werkt en de harde stop terug wilt:
+Token Guardian houdt bij wanneer de laatste reactie werd ontvangen. Als er meer dan 3.590 seconden zijn verstreken (de TTL minus een buffer van 10 seconden), kan het ingrijpen. **Het staat standaard uit, vanwege Remote Control.** Het blokkeerbericht van een hook wordt lokaal weergegeven als een systeembericht dat de externe client nooit ontvangt, dus een externe gebruiker zag de prompt zonder uitleg verdwijnen. In plaats van een beveiliging uit te brengen die zich anders gedraagt afhankelijk van waar je zit, hebben we hem uitgezet. Zodra Remote Control hookberichten begint door te sturen, gaat de standaard weer aan. Tot die tijd zet je hem zelf aan met een van de twee modi.
 
 ```
-export CC_TOKEN_SAVER_CACHE_GUARD=block
+export CC_TOKEN_SAVER_CACHE_GUARD=warn    # Claude vermeldt de vervaldatum in de eerste regel van zijn antwoord
+export CC_TOKEN_SAVER_CACHE_GUARD=block   # de prompt wordt één keer geweigerd met onderstaand bericht
 ```
 
-In blokkeermodus wordt de prompt eenmalig geweigerd met onderstaand bericht. Stuur hem opnieuw en hij gaat door. `off` schakelt de controle volledig uit.
+In `warn` gaat de prompt door, en Claude opent zijn antwoord met één regel die zegt dat de cache was verlopen, dat deze beurt de volledige context heeft betaald, en dat na een pauze van een uur of langer `/clear` → `/s-continue` de goedkopere weg terug is. Deze bereikt wel een externe client, omdat Claude's antwoord wordt doorgestuurd, ook al worden hookberichten dat niet.
+
+In `block` wordt de prompt één keer geweigerd met onderstaand bericht. Stuur hem opnieuw en hij gaat door. Gebruik dit in een lokale terminal wanneer je de harde stop wilt.
 
 ```
 🚨 Cache expired (68m 23s idle)
