@@ -19,7 +19,7 @@ If the user provides "help" as argument, show usage summary and stop:
 /setup-statusline — Install or uninstall the live usage monitor
 
 Format:
-  [RUN🟢] ＄0.10/＄12.23 | [5H🟢] 9% ⏳1h32m | [W🟡] 65% ⏳1d3h | [CTX🟢] 22%
+  [RUN🟢] $0.10/$12.23 | [5H🟢] 9% ⏳1h32m | [W🟡] 65% ⏳1d3h | [CTX🟢] 22%
   ─────   last / total     5h window usage    weekly (≥60% only)  context window
                            (subscribers only)
 
@@ -84,13 +84,13 @@ Do not modify any settings. Just display the help text and stop.
    It will appear after your next interaction with Claude.
 
    Subscriber format:
-     [RUN🟢] ＄0.10/＄12.23 | [5H🟢] 9% ⏳1h32m | [W🟡] 65% ⏳1d3h | [CTX🟢] 22%
+     [RUN🟢] $0.10/$12.23 | [5H🟢] 9% ⏳1h32m | [W🟡] 65% ⏳1d3h | [CTX🟢] 22%
 
    API key format:
-     [RUN🟢] ＄0.10/＄12.23 | [CTX🟢] 22%
+     [RUN🟢] $0.10/$12.23 | [CTX🟢] 22%
 
    Fields:
-   - [RUN]  ＄0.10/＄12.23 — **Current user turn cost** / cumulative cost since `claude` started.
+   - [RUN]  $0.10/$12.23 — **Current user turn cost** / cumulative cost since `claude` started.
                         The turn cost accumulates across follow-up tool calls so a $1.43 warning
                         stays visible until you start a new prompt. A new turn is detected when
                         no API call happens for 60 seconds (tunable via
@@ -104,7 +104,7 @@ Do not modify any settings. Just display the help text and stop.
    Color thresholds:
    | Indicator | 🟢 Normal | 🟡 Warning | 🔴 Critical |
    |-----------|-----------|------------|-------------|
-   | RUN       | < ＄0.30  | ≥ ＄0.30   | ≥ ＄1.00   |
+   | RUN       | < $0.30  | ≥ $0.30   | ≥ $1.00   |
    | 5H        | < 70%     | ≥ 70%      | ≥ 90%      |
    | W         | (hidden)  | ≥ 60%      | ≥ 90%      |
    | CTX       | < 35%     | ≥ 35%      | ≥ 70%      |

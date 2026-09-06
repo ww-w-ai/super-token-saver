@@ -1,6 +1,6 @@
 ---
 name: report-limit
-description: 'Max plan hit the wall? Report your 5h window data — we''re mapping the rate limit formula Anthropic won''t publish'
+description: 'Max plan hit the wall? Report your 5h window data - we''re mapping the rate limit formula that is not published anywhere'
 when_to_use: Use when user hits a rate limit and wants to contribute data. Triggers on "report limit", "limit report", "rate limit report".
 host: claude-code
 ---

@@ -537,7 +537,7 @@ Das Plugin injiziert beim Sitzungsstart Kontext. Hier ist genau wie viel:
 
 | Injektion | Wann | Tokens | Zweck |
 | --------- | ---- | ------ | ------- |
-| Session Architect | SessionStart (einmalig) | ~1.100 | SubTask-Delegationsstrategie + Concise-Mode-Regeln |
+| Session Architect | SessionStart (einmalig) | ~1.100 | Delegation an SubTasks + Regeln für den Concise Mode |
 | Git-Kontext (wenn git-lite aktiviert) | SessionStart (einmalig) | ~280 | Ersetzt CCs native ~2.200-Tok-Git-Anweisungen |
 | Cache-Ablaufwarnung | Bei Leerlauf > 59 Min (einmalig) | ~200 | Markiert die teure Neuübertragung, zeigt den günstigeren Weg |
 | Status line | Jeder API-Aufruf | 0 | Rendert in Terminal-Statusleiste, nicht in Gesprächskontext |

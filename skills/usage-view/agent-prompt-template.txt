@@ -107,7 +107,7 @@ SCOPE: Section1 uses ONLY the top-level summary numbers (total cost, token break
 - Empathize warmly with users who lean on autonomous runs — this is a legitimate workflow (especially for solo devs leveraging AI for long tasks), not a misuse. Never judgemental. Frame as "you trust the AI to run long" with practical tips only.
 - Cost by Context Size + Context Size Distribution — ONE clear paragraph with this structure:
   STEP 1: State the simple fact from context distribution data — what % of calls are in the cheapest bucket, and how much more expensive is the 500K+ bucket (cite exact avg cost per call numbers from the data).
-  STEP 2: Explain WHY in plain language — AI doesn't "remember" previous messages on its own. Every time you send a message, the system sends the ENTIRE conversation history (= context) back to the AI so it can understand the flow. As context size grows, each message costs more. Use the term "context size" explicitly — don't say "conversation length" or "longer conversations" which is vague.
+  STEP 2: Explain WHY in plain language — AI doesn't "remember" previous messages on its own. Each new turn re-reads the ENTIRE conversation so far (= context) so the model can follow the flow. As context size grows, each message costs more. Use the term "context size" explicitly — don't say "conversation length" or "longer conversations" which is vague.
   STEP 3: Give ONE actionable tip — when the conversation gets long, use /clear to start fresh and /s-continue to bring back what you need. This keeps most of your messages in the cheap zone.
 
   RULES for this paragraph:
