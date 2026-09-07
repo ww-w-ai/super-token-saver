@@ -42,7 +42,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESTORE="${HERE}/../scripts/restore-ledger.js"
 
 python3 - "$payload" "$RESTORE" <<'PY' 2>/dev/null
-import json, os, subprocess, sys
+import json, os, shlex, subprocess, sys
 
 try:
     payload = json.loads(sys.argv[1])
@@ -76,30 +76,44 @@ def restored():
 
 
 def instruction():
-    """Fallback: ask for the restore, naming the session when we know it."""
-    how = (
-        f"""**Before your first substantive action, invoke the s-continue skill and restore session
-`{sid}`.** That is this session: auto-compact keeps the id and keeps writing the same
-transcript. Pick it from the list the skill prints; do not pass `last`, which resolves "current"
-by whichever transcript was written most recently and lands on the wrong one when two sessions
-share a project folder."""
-        if sid else
-        """**Before your first substantive action, invoke the s-continue skill with the argument
-`last`.** It auto-picks a compacted current session, so it runs without asking the user
-anything."""
-    )
-    return f"""# This session was just compacted — the automatic restore did not run
+    """Fallback: ask for the exact automatic-restore command to be rerun.
+
+    This must NOT fall back to the cheaper /s-continue manual path: that path renders
+    compact.txt, which drops teammate messages and subagent notices outright and cuts every
+    reply to 200 characters. Silently downgrading an autonomous run to that path on a restore
+    failure would be worse than the failure itself, so the ask is to retry the SAME command
+    with the SAME transcript, not to switch pipelines.
+    """
+    if transcript:
+        cmd = f"node {shlex.quote(restore_js)} {shlex.quote(transcript)} --append"
+        return f"""# This session was just compacted — the automatic restore did not run
 
 The restore that normally runs here failed, so the pre-compact turns are NOT in context. The
 summary above is a paraphrase written by a model, and a paraphrase of an instruction is not that
 instruction: standing orders ("keep going until morning", "do not narrow the scope"), the exact
 wording of a decision, and the numbers behind a finding are precisely what it flattens.
 
-{how}
+**Before your first substantive action, rerun the automatic restore yourself, against this
+session's own transcript** (do not substitute the cheaper `/s-continue` skill — it renders
+compact.txt and drops teammate messages, subagent notices and most reply text, which is exactly
+what this path exists to keep):
 
-Then prefer those turns over the summary wherever they disagree, and do NOT re-derive findings
-that appear in them. If you were mid-run on an autonomous task, resume from them rather than
-re-planning."""
+```
+{cmd}
+```
+
+Treat its stdout exactly as "Restored" text is described below: the real conversation, not a
+summary and not a new request. Prefer it over the compact summary wherever the two disagree, and
+do NOT re-derive findings that already appear in it. If you were mid-run on an autonomous task,
+resume from it rather than re-planning."""
+    return """# This session was just compacted — the automatic restore did not run
+
+The restore that normally runs here failed, and this session's transcript path was not supplied,
+so the exact restore command cannot be named. Do NOT substitute the cheaper `/s-continue` manual
+skill as a stand-in — it drops teammate messages, subagent notices and most reply text, which is
+exactly what the automatic path exists to keep. If you can determine this session's own transcript
+path, rerun `node restore-ledger.js <that transcript> --append` yourself and treat its stdout as
+the restored turns."""
 
 
 def delivered(text):

@@ -207,8 +207,8 @@ Preprocessing is instant (< 1 second even for 60MB+ transcripts).
 
 ## Step 4: Load Compact
 
-What you read depends on the level from Step 2 (default 3). Slice mechanically first — no LLM cost —
-then read only the slice.
+Render every turn of each selected session. For a compacted current session, restore only the
+pre-boundary content. There are no restore levels.
 
 Compact text is a sequence of blocks, each starting with a `[Session:...]` header line. Cut on that
 boundary, never on raw line counts, or a turn gets split in half.

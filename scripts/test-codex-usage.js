@@ -581,7 +581,7 @@ fs.writeFileSync(normalized1, "stale content from a pre-v3 format\n");
 const renormalized = codexTranscript.normalizeCodexTranscript(sess1Path, sess1MetaRead);
 const stamp = JSON.parse(fs.readFileSync(renormalized + ".meta.json", "utf8"));
 check("stale format-version stamp forces re-normalization", () => fs.readFileSync(renormalized, "utf8").includes("codex_token_count"), true);
-check("re-normalization writes the current format version", stamp.version, 3);
+check("re-normalization writes the current format version", stamp.version, 4);
 
 // ===========================================================================
 // D. End-to-end: analyze-usage.js --host codex

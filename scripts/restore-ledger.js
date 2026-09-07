@@ -42,6 +42,7 @@
 const fs = require("fs");
 const path = require("path");
 const { deriveCachePath } = require("./preprocess.js");
+const { CACHE_BASE } = require("./lib/cache-paths.js");
 const codex = require("./lib/codex-transcript.js");
 
 /**
@@ -72,6 +73,16 @@ const MAX_EARLIER_SESSIONS = 5;
 const LEDGER_NAME = "restore-ledger.md";
 const CURSOR_NAME = "restore-cursor";
 const HANDOFF_NAME = "handoff.md";
+
+/**
+ * Bumped whenever `classify()` learns to keep a row type it used to skip. A
+ * ledger written by an older version already advanced its cursor past those
+ * rows, so they are gone from the ledger forever unless the transcript is
+ * re-read from the top — this is the version that forces that rebuild.
+ * v2: `codex_agent_comm` rows (Codex outgoing dispatch + inbound envelopes).
+ */
+const LEDGER_FORMAT_VERSION = 2;
+const FORMAT_LINE = /^# format: (\d+)\s*$/m;
 
 // ───────────────────────────── transcript reading ─────────────────────────────
 
@@ -136,6 +147,22 @@ function classify(obj) {
     if (parts.length === 0) return null;
     return { role: "Assistant", text: parts.join("\n") };
   }
+  // Codex agent communication, normalized by codex-transcript.js into its own
+  // row type so it can never be mistaken for a `user`/`assistant` transcript
+  // record: an outgoing spawn_agent/send_message/followup_task call the model
+  // itself issued, or an inbound anchored MESSAGE/FINAL_ANSWER/NEW_TASK
+  // envelope from another agent.
+  if (type === "codex_agent_comm") {
+    if (obj.direction === "outgoing") {
+      const text = String(obj.text || "").trim();
+      if (!text) return null;
+      const to = obj.to ? ` → ${obj.to}` : "";
+      return { role: "Assistant", text: `[${obj.tool}${to}] ${text}` };
+    }
+    const text = String(obj.text || "").trim();
+    if (!text) return null;
+    return { role: obj.messageType === "MESSAGE" ? "Teammate" : "Agent", text };
+  }
   return null;
 }
 
@@ -174,18 +201,19 @@ function readSegment(transcriptPath, fromLine) {
  * and looks for a session_meta row, so it cannot mistake a Claude Code transcript for one.
  */
 function resolveSource(transcriptPath) {
-  let meta = null;
-  try {
-    meta = codex.readSessionMeta(transcriptPath);
-  } catch {
-    meta = null;
-  }
-  if (!meta) return { parsePath: transcriptPath, original: transcriptPath };
-  return { parsePath: codex.normalizeCodexTranscript(transcriptPath, meta), original: transcriptPath };
+  const source = codex.resolveCodexSource(transcriptPath);
+  if (!source) return { parsePath: transcriptPath, original: transcriptPath, isCodex: false, cwd: null };
+  const { meta } = source;
+  return {
+    parsePath: codex.normalizeCodexTranscript(source.path, meta),
+    original: source.path,
+    isCodex: true,
+    cwd: meta.cwd || null,
+  };
 }
 
 function ledgerPaths(transcriptPath) {
-  const { parsePath, original } = resolveSource(path.resolve(transcriptPath));
+  const { parsePath, original, isCodex, cwd } = resolveSource(path.resolve(transcriptPath));
   const { cacheDir, sessionId, projectHash } = deriveCachePath(parsePath);
   return {
     cacheDir,
@@ -193,8 +221,16 @@ function ledgerPaths(transcriptPath) {
     projectHash,
     parsePath,
     original,
+    isCodex,
+    cwd,
     transcriptDir: path.dirname(parsePath),
     projectDir: path.dirname(cacheDir),
+    // The shared cross-host root, never the host-specific tree: /s-compact
+    // always writes handoff.md under the Claude Code tree
+    // (~/.claude/super-token-saver-data/{projectHash}/handoff.md), even for a
+    // Codex session, whose own cache lives under .../codex/{projectHash}/. A
+    // Codex restore that looked in its own tree would never find it.
+    handoffDir: path.join(CACHE_BASE, projectHash),
     ledger: path.join(cacheDir, LEDGER_NAME),
     cursor: path.join(cacheDir, CURSOR_NAME),
   };
@@ -218,12 +254,53 @@ function renderEntry(e, sid) {
   return `${head}\n${e.text.trim()}\n`;
 }
 
+function ledgerFormatVersion(text) {
+  const m = FORMAT_LINE.exec(text);
+  return m ? parseInt(m[1], 10) : 1; // unstamped ledgers predate this field
+}
+
+/**
+ * A ledger built by an older format version has a cursor already past rows
+ * `classify()` now knows how to keep — for Codex that means agent
+ * communication a run genuinely sent or received, silently unrecoverable
+ * unless the transcript is re-read from line 0. Never done for a rebuild that
+ * would come back empty, and the pre-migration ledger+cursor are always kept
+ * as a backup rather than overwritten, so a rebuild is never a data-loss risk.
+ */
+function migrateLedgerIfStale(p) {
+  if (!p.isCodex || !fs.existsSync(p.ledger)) return;
+  const text = fs.readFileSync(p.ledger, "utf8");
+  const version = ledgerFormatVersion(text);
+  if (version >= LEDGER_FORMAT_VERSION) return;
+  const { entries, last } = readSegment(p.parsePath, 0);
+  // A truncated/missing source is not evidence that the old history should disappear.
+  if (!entries.length || last < readCursor(p.cursor)) return;
+
+  const ledgerBak = `${p.ledger}.v${version}.bak`;
+  const cursorBak = `${p.cursor}.v${version}.bak`;
+  if (!fs.existsSync(ledgerBak)) fs.copyFileSync(p.ledger, ledgerBak);
+  if (fs.existsSync(p.cursor) && !fs.existsSync(cursorBak)) fs.copyFileSync(p.cursor, cursorBak);
+
+  const sid = shortSid(p.sessionId);
+  const header =
+    `# restore-ledger — session ${p.sessionId}\n` +
+    `# transcript: ${p.original}\n` +
+    `# format: ${LEDGER_FORMAT_VERSION}\n` +
+    `# migrated from v${version}: full-history rebuild recovers rows the old normalizer skipped; ` +
+    `prior ledger kept at ${path.basename(ledgerBak)}\n\n`;
+  const segHeader = `### ▶ segment 1 — L${entries[0].lineNum}..L${entries[entries.length - 1].lineNum} — ${entries[0].ts} → ${entries[entries.length - 1].ts}\n\n`;
+  const body = entries.map((e) => renderEntry(e, sid)).join("\n");
+  fs.writeFileSync(p.ledger, header + segHeader + body + "\n");
+  fs.writeFileSync(p.cursor, String(last));
+}
+
 /**
  * Append the transcript's unread tail to this session's ledger as one segment.
  * Returns the segment text (empty when nothing new), and moves the cursor.
  */
 function appendSegment(transcriptPath) {
   const p = ledgerPaths(transcriptPath);
+  migrateLedgerIfStale(p);
   const from = readCursor(p.cursor);
   const { entries, last } = readSegment(p.parsePath, from);
   if (entries.length === 0) {
@@ -242,7 +319,7 @@ function appendSegment(transcriptPath) {
   const segment = header + body;
   fs.mkdirSync(p.cacheDir, { recursive: true });
   if (!fs.existsSync(p.ledger)) {
-    fs.writeFileSync(p.ledger, `# restore-ledger — session ${p.sessionId}\n# transcript: ${p.original}\n\n`);
+    fs.writeFileSync(p.ledger, `# restore-ledger — session ${p.sessionId}\n# transcript: ${p.original}\n${p.isCodex ? `# format: ${LEDGER_FORMAT_VERSION}\n` : ""}\n`);
   }
   fs.appendFileSync(p.ledger, segment + "\n");
   fs.writeFileSync(p.cursor, String(last));
@@ -347,6 +424,49 @@ function startedAt(transcriptPath) {
  * gone is still consulted.
  */
 function earlierSessions(p) {
+  return p.isCodex ? earlierSessionsCodex(p) : earlierSessionsCC(p);
+}
+
+/**
+ * Codex predecessors of the same project. Codex keeps one global session
+ * tree (no per-project directory to list), so `listCodexSessions` — already
+ * scoped to this exact cwd and already excluding subagent rollouts — is the
+ * only way to find them, not a directory scan of the (per-session) normalized
+ * tree. Ordering and the "already ended" cutoff both use each session's own
+ * `session_meta` timestamp, never a normalized file's mtime: the normalizer
+ * only exists once a session is first read, so its mtime reflects when THAT
+ * happened, not when the session itself ran.
+ */
+function earlierSessionsCodex(p) {
+  if (!p.cwd) return [];
+  const ownMeta = codex.readSessionMeta(p.original);
+  const ownStart = ownMeta && ownMeta.started ? Date.parse(ownMeta.started) : NaN;
+  if (!Number.isFinite(ownStart)) return []; // no safe reference point to compare against
+
+  let sessions = [];
+  try { sessions = codex.listCodexSessions(p.cwd, { includeSubagents: false }); } catch { sessions = []; }
+
+  const candidates = [];
+  for (const s of sessions) {
+    if (s.sessionId === p.sessionId) continue; // this session
+    const start = s.started ? Date.parse(s.started) : NaN;
+    if (!Number.isFinite(start)) continue; // missing timestamp: excluded, never Date.now()
+    const ended = Number(s.mtimeMs);
+    if (start >= ownStart || !Number.isFinite(ended) || ended > ownStart) continue;
+    candidates.push({ sessionId: s.sessionId, path: s.path, ended });
+  }
+  candidates.sort((a, b) => b.ended - a.ended || a.sessionId.localeCompare(b.sessionId));
+
+  const found = [];
+  for (const c of candidates.slice(0, MAX_EARLIER_SESSIONS)) {
+    let ledger;
+    try { ledger = appendSegment(c.path).paths.ledger; } catch { continue; }
+    if (fs.existsSync(ledger)) found.push({ sessionId: c.sessionId, path: ledger, original: c.path, mtime: c.ended });
+  }
+  return found;
+}
+
+function earlierSessionsCC(p) {
   const ownStart = startedAt(p.parsePath) || Date.now();
   const candidates = new Map(); // sessionId -> { sessionId, transcript?, mtime }
 
@@ -443,7 +563,7 @@ function assemble(p, budget) {
     }
   }
 
-  const handoff = path.join(p.projectDir, HANDOFF_NAME);
+  const handoff = path.join(p.handoffDir, HANDOFF_NAME);
   if (fs.existsSync(handoff)) {
     take(`## handoff written by /s-compact (${new Date(fileMtime(handoff)).toISOString()})`, fs.readFileSync(handoff, "utf8"));
   }
@@ -452,7 +572,8 @@ function assemble(p, budget) {
     const segs = splitSegments(fs.readFileSync(e.path, "utf8"));
     let any = false;
     for (let i = segs.length - 1; i >= 0; i--) {
-      if (!take(any ? "" : `## earlier session ${e.sessionId} (same project, folded)`, foldSegment(segs[i]))) break;
+      const label = `## earlier session ${e.sessionId} (same project, folded)${e.original ? `\n# transcript: ${e.original}\n# ledger: ${e.path}` : ""}`;
+      if (!take(any ? "" : label, foldSegment(segs[i]))) break;
       any = true;
     }
     if (!any) break;
@@ -504,4 +625,15 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { classify, readSegment, appendSegment, foldSegment, assemble, ledgerPaths, estimateTokens, DEFAULT_BUDGET };
+module.exports = {
+  classify,
+  readSegment,
+  appendSegment,
+  foldSegment,
+  assemble,
+  ledgerPaths,
+  estimateTokens,
+  DEFAULT_BUDGET,
+  LEDGER_FORMAT_VERSION,
+  ledgerFormatVersion,
+};

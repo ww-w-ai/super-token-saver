@@ -79,10 +79,22 @@ so it spends tokens: `scripts/restore-ledger.js` keeps a per-session ledger
 (`restore-ledger.md` + `restore-cursor` in the session cache dir) and each compaction appends
 "everything since the cursor" — human turns, assistant text, teammate messages, task notifications
 and SendMessage bodies verbatim, tool traffic excluded. The newest segment is injected verbatim,
-older segments, the project's `handoff.md` and earlier sessions' ledgers folded, under a 200K-char
+older segments, the project's `handoff.md` and earlier sessions' ledgers folded, under an estimated 60K-token
 budget. **Never anchor the hook's window on `compact_boundary`**: the hook runs before Claude Code
 writes that record (measured 112 ms before), and a boundary-anchored window once handed back the
 segment before the one that had just been dropped. Gate: `node scripts/test-restore-ledger.js`.
+
+Codex agent dispatches and incoming agent envelopes use ledger-only normalized records. They do
+not become user turns in manual restoration or usage reports. Earlier Codex sessions are discovered
+from original rollouts, including archives, with exact project identity and original activity times.
+Normalized-file creation times must never determine session order. Old Codex ledgers are backed up
+before rebuilding to recover previously skipped messages. A truncated source cannot replace an old
+ledger. Both hosts read the same project handoff path. Gate: `node scripts/test-codex-restore-parity.js`.
+
+The Codex compact command sets `additionalContextLimit: 0`: the ledger owns its token budget, so
+the host must not replace its output with a shorter spill preview. Both compact commands allow
+35 seconds for the 30-second restore subprocess and its fallback. A failed automatic restore retries
+the automatic ledger command against the exact transcript, without switching to manual restoration.
 
 - **`s-continue`, `s-compact` and `usage-view` are dual-host.** `usage-view --host codex` reuses
   `scripts/lib/codex-transcript.js` for discovery/normalization and `scripts/lib/codex-usage.js` for

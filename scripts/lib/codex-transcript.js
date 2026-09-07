@@ -39,7 +39,39 @@ const INDEX_PATH = path.join(NORMALIZED_ROOT, "index.json");
 // `codex_token_count` rows instead of being dropped as codex_skip, so the
 // usage-view port can consume them. Bumping this forces every previously
 // normalized file to be rewritten — a v2 file has neither row type.
-const NORMALIZED_FORMAT_VERSION = 3;
+// v4: outgoing agent-dispatch tool calls (spawn_agent / send_message /
+// followup_task, bare or collaboration./functions.-namespaced) and anchored
+// incoming `Message Type: MESSAGE|FINAL_ANSWER|NEW_TASK` developer envelopes
+// are translated into `codex_agent_comm` rows instead of being dropped as
+// codex_skip, so the after-compact ledger can restore autonomous-run agent
+// communication for Codex the way it already does for Claude Code's
+// SendMessage/teammate-message/task-notification records. A v3 file has none
+// of these rows, so it must be rewritten too.
+const NORMALIZED_FORMAT_VERSION = 4;
+
+// Outgoing tool calls that dispatch or message another agent. Matched against
+// the tool's base name once a known namespace prefix is stripped — Codex has
+// been observed emitting both the bare name and a `collaboration.`/`functions.`
+// -prefixed one for the same call, and only these three are a real dispatch:
+// any other tool call (file edits, shell, search, ...) stays excluded.
+const OUTGOING_COMM_TOOLS = new Set(["spawn_agent", "send_message", "followup_task"]);
+const COMM_NAMESPACE_PREFIXES = ["collaboration.", "functions."];
+
+// Inbound agent communication arrives on a `developer` message (Codex's
+// injected-context role) with the envelope type as the very first token of the
+// text. Anchoring on the start — not searching the whole body — is what keeps
+// a message that merely quotes "Message Type: MESSAGE" later in its text from
+// being mistaken for an envelope; a generic developer injection never opens
+// this way.
+const INCOMING_ENVELOPE = /^Message Type: (MESSAGE|FINAL_ANSWER|NEW_TASK)\b/;
+
+function commToolBaseName(name) {
+  if (typeof name !== "string") return null;
+  for (const prefix of COMM_NAMESPACE_PREFIXES) {
+    if (name.startsWith(prefix)) return name.slice(prefix.length);
+  }
+  return name;
+}
 
 // A Codex turn opens with injected context the user never typed. Marking these
 // `isMeta` is how CC's own reader already signals "not a genuine user turn",
@@ -244,9 +276,54 @@ function translateRow(row, meta) {
 
   if (row.type !== "response_item") return null;
   const p = row.payload || {};
+
+  // An outgoing dispatch/message/followup call to another agent. Every other
+  // function_call (Bash, file edits, search, ...) is generic tool traffic and
+  // stays excluded — only these three names, bare or namespaced, are a real
+  // agent-to-agent communication the ledger needs to restore.
+  if (p.type === "function_call") {
+    const base = commToolBaseName(p.name);
+    if (!base || !OUTGOING_COMM_TOOLS.has(base)) return null;
+    let args = {};
+    try { args = JSON.parse(p.arguments || "{}"); } catch { args = {}; }
+    if (!args || typeof args !== "object") args = {};
+    const text = args.message || args.content || args.prompt || args.task || "";
+    if (!text) return null;
+    return {
+      type: "codex_agent_comm",
+      direction: "outgoing",
+      tool: base,
+      to: args.target || args.id || args.to || args.recipient || args.task_name || args.agent_type || null,
+      text: String(text),
+      timestamp: ts,
+      sessionId: meta.sessionId,
+      cwd: meta.cwd,
+    };
+  }
+
   if (p.type !== "message") return null;
   const role = p.role;
-  if (role !== "user" && role !== "assistant") return null; // developer = injected
+
+  // Inbound agent communication rides a `developer` message anchored with its
+  // envelope type. It is emitted as its own row type — never as a `user`
+  // turn — so the manual restore/usage pipeline (which does not know this
+  // type) cannot mistake it for something the human typed.
+  if (role === "developer") {
+    const devText = textFromBlocks(p.content);
+    const m = devText && INCOMING_ENVELOPE.exec(devText.trimStart());
+    if (!m) return null; // ordinary injected developer instruction: still excluded
+    return {
+      type: "codex_agent_comm",
+      direction: "incoming",
+      messageType: m[1],
+      text: devText.trim(),
+      timestamp: ts,
+      sessionId: meta.sessionId,
+      cwd: meta.cwd,
+    };
+  }
+
+  if (role !== "user" && role !== "assistant") return null; // any other injected role
 
   const text = textFromBlocks(p.content);
   if (!text) return null;
@@ -271,14 +348,37 @@ function normalizedMetaPathFor(dest) {
   return dest + ".meta.json";
 }
 
+/** Resolve a normalized cache through verified source metadata, not its creation time. */
+function resolveCodexSource(file) {
+  const abs = path.resolve(file);
+  const meta = readSessionMeta(abs);
+  if (meta) return { path: abs, meta };
+  if (!abs.startsWith(NORMALIZED_ROOT + path.sep)) return null;
+  const matches = (source, data) => data && normalizedPathFor(data.cwd, data.sessionId) === abs
+    ? { path: source, meta: data } : null;
+  try {
+    const stamp = JSON.parse(fs.readFileSync(normalizedMetaPathFor(abs), "utf8"));
+    if (typeof stamp.source === "string") {
+      const found = matches(stamp.source, readSessionMeta(stamp.source));
+      if (found) return found;
+    }
+  } catch {}
+  // Older sidecars have only a format version. Reuse indexed discovery to upgrade them.
+  for (const session of listCodexSessions(null, { includeSubagents: true })) {
+    const found = matches(session.path, session);
+    if (found) return found;
+  }
+  throw new Error(`Original Codex rollout unavailable for ${abs}`);
+}
+
 function normalizeCodexTranscript(srcPath, meta) {
   const resolved = meta || readSessionMeta(srcPath);
   if (!resolved) throw new Error(`Not a Codex transcript: ${srcPath}`);
   const dest = normalizedPathFor(resolved.cwd, resolved.sessionId);
   const metaPath = normalizedMetaPathFor(dest);
+  const srcStat = fs.statSync(srcPath);
 
   try {
-    const srcStat = fs.statSync(srcPath);
     const destStat = fs.statSync(dest);
     // The per-session file carries its own format-version stamp (a sidecar,
     // not a header line — a header would shift every line number by one and
@@ -286,7 +386,9 @@ function normalizeCodexTranscript(srcPath, meta) {
     // stale v2 file (no codex_turn_context/codex_token_count rows) would be
     // reused forever just because its mtime is newer than the source.
     const stamp = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-    if (stamp.version === NORMALIZED_FORMAT_VERSION && destStat.mtimeMs >= srcStat.mtimeMs) return dest;
+    if (stamp.version === NORMALIZED_FORMAT_VERSION && stamp.source === path.resolve(srcPath)
+        && stamp.sourceSize === srcStat.size && stamp.sourceMtimeMs === srcStat.mtimeMs
+        && destStat.mtimeMs >= srcStat.mtimeMs) return dest;
   } catch {}
 
   const raw = fs.readFileSync(srcPath, "utf8");
@@ -307,7 +409,8 @@ function normalizeCodexTranscript(srcPath, meta) {
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, out.join("\n") + "\n");
-  fs.writeFileSync(metaPath, JSON.stringify({ version: NORMALIZED_FORMAT_VERSION }));
+  fs.writeFileSync(metaPath, JSON.stringify({ version: NORMALIZED_FORMAT_VERSION,
+    source: path.resolve(srcPath), sourceSize: srcStat.size, sourceMtimeMs: srcStat.mtimeMs }));
   return dest;
 }
 
@@ -317,5 +420,6 @@ module.exports = {
   listCodexSessions,
   readSessionMeta,
   normalizeCodexTranscript,
+  resolveCodexSource,
   normalizedPathFor,
 };

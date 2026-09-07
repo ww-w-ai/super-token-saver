@@ -37,7 +37,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/s-continue-after-compact.sh 2>/dev/null || true",
-            "timeout": 10
+            "timeout": 35
           }
         ]
       }

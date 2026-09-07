@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.1] - 2026-09-07
+
+### Fixed: Codex automatic restoration preserves autonomous-run context
+
+- Keep outgoing agent assignments, messages and follow-ups, plus incoming agent messages and
+  completion reports. Ordinary injected instructions and generic tool traffic remain excluded.
+- Find earlier sessions from original Codex rollouts and archives. Exclude overlapping sessions,
+  subagents and other projects. Keep original source references when using normalized caches.
+- Read the shared `/s-compact` handoff from the same location as manual restoration.
+- Refresh old normalization caches and back up old Codex ledgers before recovering previously
+  skipped communication. Preserve old ledgers when their source has been truncated.
+- Let the ledger's own token budget govern Codex hook output instead of the host's shorter spill
+  preview. Allow the restore subprocess to finish before the hook timeout.
+- Keep automatic retry on the ledger path. Manual `/s-continue` remains level-free; legacy
+  `--level` arguments are accepted and ignored.
+
 ## [3.6.0] - 2026-09-07
 
 ### Changed: the after-compact restore no longer loses autonomous-run context
