@@ -7,32 +7,22 @@ Restore context from previous sessions — smarter, cheaper alternative to `/com
 ```
 /s-continue                    # show session list, pick which to restore
 /s-continue last               # instantly restore the most recent session
-/s-continue last --level 1     # restore only the user turns (~1-2K tokens)
 ```
 
-## Restore Levels
+## What a restore contains
 
-`--level N` controls how deeply each selected session is read. Default 3.
-
-| Level | User turns | Replies at each end | Replies in the middle | Measured (170-turn session) |
-|---|---|---|---|---|
-| 1 | last 30, 150 + 100 chars | first 6 + last 6, at 100 chars | 50 chars | 6.1 K tokens |
-| 2 | last 30, as stored | first 12 + last 12, as stored | 50 chars | 9.3 K tokens |
-| 3 | all | first 24 + last 24, as stored | 50 chars | 44.3 K tokens |
-
-No reply is ever dropped — the middle of a long turn is shortened to 50 chars, not removed, so the
-run still reads as a history. The `-> N AI responses at lines X-Y` pointer above each turn locates
-the originals in the JSONL.
+Every turn of a selected session, as stored in `compact.txt`. Within one turn the first 24 and last
+24 replies are kept as stored and the ones in between are shortened to 50 chars, so an autonomous
+run with hundreds of replies under one user turn stays bounded. No reply is dropped — the
+`-> N AI responses at lines X-Y` pointer above each turn locates the originals in the JSONL. Measured
+on a 170-turn session: 44.3 K tokens.
 
 `compact.txt` is already a preview — the preprocessor cut user messages to 300 + 200 chars and
-assistant replies to 100 + 100 when it was built. No level returns a full assistant answer; the only
-path to original text is `--level 3` with a topic, which re-reads matched turns from the JSONL.
-
-In an autonomous run one user turn can carry hundreds of replies, so levels 1 and 2 cap them per
-turn, keep both ends, and say how many were skipped.
+assistant replies to 100 + 100 when it was built. The only path to original text is a topic, which
+re-reads matched turns from the JSONL.
 
 Every restored line keeps its `L{n}` marker, so a truncated turn is read back in full from the
-original transcript on demand. Level 1 defers detail; it does not discard it.
+original transcript on demand. A `--level N` argument from an older habit is accepted and ignored.
 
 ## How It Works
 

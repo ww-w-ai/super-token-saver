@@ -63,16 +63,26 @@ the prompt-cache, statusline, git-context, architecture, and compact-restoration
 manifest points to `hooks/hooks-codex.json`, which injects `session-architecture-codex.md` and keeps
 compact restoration without loading the three Claude Code-only hook contracts.
 
-**The after-compact hook restores; it does not ask the model to.** It runs `scripts/restore.js` at
-level 1 and injects the result as `additionalContext`. Do not turn it back into an instruction: an
-earlier version said "there is no exception" and was skipped anyway on a real autonomous run, which
-is what a declinable instruction is worth. `SessionStart(source=compact)` is the only event that
-carries injected context on both hosts — Codex's `PostCompact` returns an outcome with no context
-field, Claude Code's is absent from the union — so neither host may be moved to `PostCompact`.
+**The after-compact hook restores; it does not ask the model to.** It runs
+`scripts/restore-ledger.js --append` and injects the result as `additionalContext`. Do not turn it
+back into an instruction: an earlier version said "there is no exception" and was skipped anyway on
+a real autonomous run, which is what a declinable instruction is worth. `SessionStart(source=compact)`
+is the only event that carries injected context on both hosts — Codex's `PostCompact` returns an
+outcome with no context field, Claude Code's is absent from the union — so neither host may be
+moved to `PostCompact`.
 
-**`scripts/restore.js` is the only implementation of the level slicing.** Both the skill and the
-hook call it. It used to be an inline Python block inside `SKILL.md`, which the hook could only
-copy, and the copy drifted. Never reinstate a second copy in either caller.
+**Two restore paths, two implementations, on purpose.** The user-invoked `/s-continue` is asked for
+and renders every turn of the selected sessions from `compact.txt`: `scripts/restore.js` owns that
+rendering and nothing else may copy it. There are no restore levels any more; a `--level N` from an
+older habit is accepted and ignored. The after-compact hook is not asked for and must not lose the thread of an autonomous run,
+so it spends tokens: `scripts/restore-ledger.js` keeps a per-session ledger
+(`restore-ledger.md` + `restore-cursor` in the session cache dir) and each compaction appends
+"everything since the cursor" — human turns, assistant text, teammate messages, task notifications
+and SendMessage bodies verbatim, tool traffic excluded. The newest segment is injected verbatim,
+older segments, the project's `handoff.md` and earlier sessions' ledgers folded, under a 200K-char
+budget. **Never anchor the hook's window on `compact_boundary`**: the hook runs before Claude Code
+writes that record (measured 112 ms before), and a boundary-anchored window once handed back the
+segment before the one that had just been dropped. Gate: `node scripts/test-restore-ledger.js`.
 
 - **`s-continue`, `s-compact` and `usage-view` are dual-host.** `usage-view --host codex` reuses
   `scripts/lib/codex-transcript.js` for discovery/normalization and `scripts/lib/codex-usage.js` for

@@ -1,31 +1,26 @@
 #!/usr/bin/env node
 /**
- * restore.js — turn one transcript into the restore text, at a chosen level.
+ * restore.js — turn one transcript into the restore text the /s-continue skill reads.
  *
- * This is the single implementation of the level slicing. Both callers use it:
- * the s-continue skill, and the after-compact hook that runs unattended. The
- * slicing used to live as an inline Python block inside SKILL.md, which meant
- * the hook could not call it — only copy it — and a copy is exactly how the
- * after-compact hook once derived a cache path nothing wrote and died quietly
- * for months.
+ * This is the user-invoked path: the caller asked to restore, so every turn is rendered. The
+ * slicing used to live as an inline Python block inside SKILL.md; it lives here so the skill
+ * calls code instead of copying it — a copy is how an earlier hook derived a cache path nothing
+ * wrote and died quietly for months. The unattended after-compact restore is a different path
+ * with different needs (verbatim, ledger-backed) and lives in restore-ledger.js.
  *
- * Levels differ in how much of each turn is read and how far back they reach.
- * No reply is ever dropped at any level: the middle of a long turn is shortened
- * to 50 characters, and the `-> N AI responses at lines X-Y` pointer above each
- * turn still locates the originals in the transcript.
- *
- *   1  headline  last 30 user turns, replies at 100/50 chars
- *   2  recent    same 30 turns, full stored width at each end
- *   3  full      every turn
+ * No reply is ever dropped. During an autonomous run the assistant answers dozens of times under
+ * one user turn — measured, 60 replies under a single message came to 27 KB on their own — so the
+ * replies at each end of a turn are kept at full stored width and the middle is shortened to 50
+ * characters. The `-> N AI responses at lines X-Y` pointer above each turn locates the originals
+ * in the transcript.
  *
  * Usage:
- *   node restore.js <transcript.jsonl> [--level 1|2|3] [--before-boundary]
- *                   [--original <rollout>] [--out <file>]
+ *   node restore.js <transcript.jsonl> [--before-boundary] [--original <rollout>] [--out <file>]
  *
- * --before-boundary cuts everything from the last compaction onward. That is
- * what an after-compact caller wants: the turns after the boundary are the ones
- * still in the model's context, and the turns before it are the ones that were
- * dropped. Without it the whole session is rendered.
+ * --before-boundary cuts everything from the last compaction onward: the turns after the boundary
+ * are still in the model's context, the turns before it are the ones that were dropped. Without it
+ * the whole session is rendered. A `--level N` argument from older invocations is accepted and
+ * ignored.
  */
 
 const fs = require("fs");
@@ -35,12 +30,9 @@ const { deriveCachePath } = require("./preprocess.js");
 const codex = require("./lib/codex-transcript.js");
 
 /** Replies kept at full width at each end of one user turn. */
-const EDGE_BY_LEVEL = { 1: 6, 2: 12 };
-const EDGE_DEFAULT = 24;
+const EDGE = 24;
 /** Width a reply in the middle of a turn is shortened to. */
 const MID = 50;
-/** User turns a bounded level reaches back over. */
-const TURN_WINDOW = 30;
 
 /**
  * A compaction boundary as preprocess.js writes it: a System turn whose whole
@@ -82,13 +74,6 @@ function isUser(block) {
   return block.length > 0 && firstLine(block).includes('User: "');
 }
 
-/** Keep the head and tail of a long value, with the middle elided. */
-function cut(s, head, tail) {
-  const t = s.trim();
-  if (t.length <= head + tail) return t;
-  return t.slice(0, head).trimEnd() + " … " + t.slice(t.length - tail).trimStart();
-}
-
 /**
  * The number and the readable body of one reply line, with the preprocessor's
  * own truncation marker and trailing bracketed annotations removed — those are
@@ -116,41 +101,14 @@ function beforeLastBoundary(blocks) {
   return lastBoundary === -1 ? blocks : blocks.slice(0, lastBoundary);
 }
 
-/** Which blocks a level reads, before any per-reply shortening. */
-function selectBlocks(blocks, level) {
-  if (level === 3) return blocks;
-  if (level === 1) return blocks.filter(isUser).slice(-TURN_WINDOW);
-
-  const userIdx = [];
-  for (let i = 0; i < blocks.length; i++) if (isUser(blocks[i])) userIdx.push(i);
-  return userIdx.length > TURN_WINDOW ? blocks.slice(userIdx[userIdx.length - TURN_WINDOW]) : blocks;
-}
-
 /**
- * One block, rendered at the given level.
- *
- * Every level caps replies per turn, level 3 included. Without that cap a
- * single user turn is unbounded — during an autonomous run the assistant
- * answers dozens of times under one message, and level 1 could come out larger
- * than level 3.
+ * One block, rendered: the header line as stored, the replies at each end of the turn as stored,
+ * the replies in the middle shortened. Without the middle cut a single user turn is unbounded.
  */
-function renderBlock(block, level, edge) {
+function renderBlock(block) {
   const out = [];
   const lines = block.split("\n");
-
-  if (level === 1) {
-    const head = lines[0];
-    const at = head.indexOf('User: "');
-    if (at === -1) {
-      out.push(head);
-    } else {
-      const pre = head.slice(0, at);
-      const msg = head.slice(at + 'User: "'.length).replace(/"$/, "");
-      out.push(`${pre}User: "${cut(msg, 150, 100)}"`);
-    }
-  } else {
-    out.push(lines[0]);
-  }
+  out.push(lines[0]);
 
   const replies = [];
   let pointer = null;
@@ -166,8 +124,7 @@ function renderBlock(block, level, edge) {
 
   if (pointer) out.push(pointer);
   replies.forEach((line, i) => {
-    const atEdge = i < edge || i >= replies.length - edge;
-    if (atEdge && level > 1) {
+    if (i < EDGE || i >= replies.length - EDGE) {
       out.push(line);
       return;
     }
@@ -176,26 +133,25 @@ function renderBlock(block, level, edge) {
       out.push(line);
       return;
     }
-    out.push(`${parsed.num}. "${parsed.body.slice(0, atEdge ? 100 : MID)}"`);
+    out.push(`${parsed.num}. "${parsed.body.slice(0, MID)}"`);
   });
 
   return out.concat(others).join("\n");
 }
 
 /** The restore text for one already-preprocessed compact file. */
-function render(text, { level, beforeBoundary }) {
+function render(text, { beforeBoundary } = {}) {
   let blocks = splitBlocks(text);
   if (beforeBoundary) blocks = beforeLastBoundary(blocks);
 
   // Anything before the first header is the "# compact-format:" preamble, not
-  // a turn. It survives every level.
+  // a turn. It is kept as is.
   let preamble = "";
   if (blocks.length > 0 && !isUser(blocks[0]) && !blocks[0].startsWith(HEADER)) {
     preamble = blocks.shift();
   }
 
-  const edge = EDGE_BY_LEVEL[level] ?? EDGE_DEFAULT;
-  const rendered = selectBlocks(blocks, level).map((b) => renderBlock(b, level, edge));
+  const rendered = blocks.map(renderBlock);
   const head = preamble.trim() === "" ? "" : preamble.replace(/\n+$/, "") + "\n";
   return head + rendered.join("\n") + "\n";
 }
@@ -242,16 +198,13 @@ function ensureCache(transcriptPath, originalOverride) {
 const VALUED = new Set(["--level", "--original", "--out"]);
 
 function parseArgs(argv) {
-  const opts = { transcript: null, level: 3, beforeBoundary: false, original: null, out: null };
+  const opts = { transcript: null, beforeBoundary: false, original: null, out: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (VALUED.has(arg)) {
-      const value = argv[++i];
-      if (arg === "--level") {
-        const n = Number(value);
-        opts.level = [1, 2, 3].includes(n) ? n : 3;
-      } else if (arg === "--original") opts.original = value;
-      else opts.out = value;
+      const value = argv[++i]; // --level's value is consumed here and ignored
+      if (arg === "--original") opts.original = value;
+      else if (arg === "--out") opts.out = value;
     } else if (arg === "--before-boundary") {
       opts.beforeBoundary = true;
     } else if (!arg.startsWith("--") && opts.transcript === null) {
@@ -265,7 +218,7 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.transcript) {
     process.stderr.write(
-      "Usage: node restore.js <transcript.jsonl> [--level 1|2|3] [--before-boundary] [--original <path>] [--out <file>]\n",
+      "Usage: node restore.js <transcript.jsonl> [--before-boundary] [--original <path>] [--out <file>]\n",
     );
     process.exit(1);
   }
@@ -277,7 +230,7 @@ function main() {
 
   const cachePath = ensureCache(abs, opts.original);
   const text = fs.readFileSync(cachePath, "utf8");
-  const out = render(text, { level: opts.level, beforeBoundary: opts.beforeBoundary });
+  const out = render(text, { beforeBoundary: opts.beforeBoundary });
 
   // An empty render is a failure, not a result. A caller that prints it would
   // announce a restore that carried nothing.
@@ -290,6 +243,6 @@ function main() {
   else process.stdout.write(out);
 }
 
-module.exports = { render, splitBlocks, beforeLastBoundary, cut, bodyOf };
+module.exports = { render, splitBlocks, beforeLastBoundary, bodyOf };
 
 if (require.main === module) main();

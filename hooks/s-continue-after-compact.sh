@@ -12,14 +12,18 @@
 # guarantee. So the hook now does the restore itself and injects the RESULT. There is nothing
 # left to comply with.
 #
-# It calls scripts/restore.js, which owns the level slicing and is the same code path the
-# s-continue skill uses. The slicing is NOT reimplemented here: a second copy is exactly how this
-# hook once derived a cache path nothing wrote and died silently for months.
+# It calls scripts/restore-ledger.js, which owns what an after-compact restore contains and keeps
+# a per-session ledger of every segment it has put back. Nothing is reimplemented here: a second
+# copy is exactly how this hook once derived a cache path nothing wrote and died silently for
+# months.
 #
-# Level 1 is forced. Compaction happens because context ran short, so refilling it is a cost that
-# must stay bounded: level 1 is the last 30 user turns with every reply present but shortened —
-# nothing is discarded, and the `-> N AI responses at lines X-Y` pointers locate the originals.
-# If more is needed the model can call the skill for level 2 or 3 on its own.
+# This path is NOT the user-invoked /s-continue, and it does not read compact.txt. That path is
+# asked for and is allowed to be cheap. This one is not asked for and must not lose the thread of
+# an autonomous run, so it spends tokens: human turns, the model's own replies, teammate messages
+# and subagent completion notices come back verbatim; only tool traffic is left out. The window is
+# "everything since this ledger last appended", not "since the last compaction boundary" — the
+# boundary record is written AFTER this hook runs (measured 112 ms after), and reading it as the
+# last boundary once handed back the segment before the one that had just been dropped.
 #
 # additionalContext is the ONLY compaction-adjacent hook output that reaches the model. On Claude
 # Code, PostCompact is absent from the hookSpecificOutput union. On Codex, PostCompact returns a
@@ -35,7 +39,7 @@ payload="$(cat)"
 [ -n "$payload" ] || exit 0
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RESTORE="${HERE}/../scripts/restore.js"
+RESTORE="${HERE}/../scripts/restore-ledger.js"
 
 python3 - "$payload" "$RESTORE" <<'PY' 2>/dev/null
 import json, os, subprocess, sys
@@ -53,12 +57,12 @@ transcript = payload.get("transcript_path") or ""
 
 
 def restored():
-    """The pre-compact turns at level 1, or None if anything at all went wrong."""
+    """The dropped turns from the ledger, or None if anything at all went wrong."""
     if not transcript or not os.path.isfile(transcript):
         return None
     try:
         run = subprocess.run(
-            ["node", restore_js, transcript, "--level", "1", "--before-boundary"],
+            ["node", restore_js, transcript, "--append"],
             capture_output=True, text=True, timeout=30,
         )
     except Exception:
@@ -75,13 +79,13 @@ def instruction():
     """Fallback: ask for the restore, naming the session when we know it."""
     how = (
         f"""**Before your first substantive action, invoke the s-continue skill and restore session
-`{sid}` at level 1.** That is this session: auto-compact keeps the id and keeps writing the same
+`{sid}`.** That is this session: auto-compact keeps the id and keeps writing the same
 transcript. Pick it from the list the skill prints; do not pass `last`, which resolves "current"
 by whichever transcript was written most recently and lands on the wrong one when two sessions
 share a project folder."""
         if sid else
         """**Before your first substantive action, invoke the s-continue skill with the argument
-`last --level 1`.** It auto-picks a compacted current session, so it runs without asking the user
+`last`.** It auto-picks a compacted current session, so it runs without asking the user
 anything."""
     )
     return f"""# This session was just compacted — the automatic restore did not run
@@ -111,11 +115,13 @@ already appear in it. If you were mid-run on an autonomous task (cowork-sprint, 
 Workflow), resume from these turns rather than re-planning. Standing orders stated here still
 govern the work.
 
-This is level 1: the last 30 user turns, every reply present but shortened — long messages are
-cut and mid-turn replies drop to 50 characters. Nothing was discarded. The
-`-> N AI responses at lines X-Y` line above each turn locates the originals in the transcript, so
-read a range back the moment a shortened line turns out to matter. For a wider or longer restore,
-invoke the s-continue skill at level 2 or 3.
+The newest segment is verbatim: every human turn, every reply you wrote, every teammate message
+and subagent completion notice, and the body of every SendMessage you sent. Tool calls and their
+output are the only thing left out. Earlier segments, a /s-compact handoff, and earlier sessions
+of this project appear folded — human turns whole, replies and teammate messages shortened with a
+`…[+N chars, read L{{n}} for the rest]` marker. Every entry keeps its `[Session:… L{{n}}]` header, so
+read that line of the transcript the moment a shortened entry turns out to matter. The full
+ledger is on disk as restore-ledger.md in this session's super-token-saver-data cache dir.
 
 ---
 

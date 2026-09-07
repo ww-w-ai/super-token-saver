@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.0] - 2026-09-07
+
+### Changed: the after-compact restore no longer loses autonomous-run context
+
+The `SessionStart(source=compact)` hook used to re-inject a level-1 slice: the last 30 user turns,
+replies cut to 200 characters, teammate messages and subagent notifications dropped, and the window
+anchored on the last `compact_boundary` record. Two things went wrong on real autonomous runs.
+The hook fires before Claude Code writes the boundary (measured 112 ms before), so the window
+landed on the previous boundary and a nine-hour segment came back as the segment before it. And
+the 200-character cut removed exactly what an autonomous run needs after compaction: the full
+teammate reports and the model's own decisions.
+
+The hook now calls `scripts/restore-ledger.js`, which keeps a per-session ledger and appends
+everything since its own cursor at each compaction: human turns, assistant text, teammate messages,
+task notifications and SendMessage bodies verbatim, with only tool calls and their output left out.
+The newest segment is injected verbatim, older segments, the project's `handoff.md` and up to five
+earlier sessions of the same project folded, within a budget of about 60K tokens. Every entry keeps its
+`[Session:… L{n}]` marker. Earlier sessions are brought in from their transcripts, so a session
+that ended without ever compacting still hands its turns on. Gate: `node scripts/test-restore-ledger.js`.
+
+### Removed: `/s-continue --level 1|2|3`
+
+The levels existed to make the after-compact restore cheap; that restore now has its own path.
+`/s-continue` reads every turn of the selected sessions, which was level 3 and the default. A
+`--level N` argument is still accepted and ignored, so nothing that passes it breaks.
+
 ## [3.5.0] - 2026-09-04
 
 ### Fixed: `/usage-view --all` counted about half the real total
