@@ -34,7 +34,7 @@ const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentT
 const { dropReplayedRequests } = require('./lib/request-dedup');
 const { loadAccountIndex, accountOf, listAccounts } = require('./lib/accounts');
 const { PLAN_INFO, VALID_PLANS } = require('./lib/plan-info');
-const { log, makeReportDir, accountHeading, toolVersion, publishReport } = require('./lib/report-publish');
+const { log, makeReportDir, accountHeading, toolVersion, pluginVersion, publishReport } = require('./lib/report-publish');
 const { summarizeWindow, buildWindowTable, writeWindowFiles, isGistFile, roundCost } = require('./lib/report-window');
 
 const SCRIPTS_DIR = __dirname;
@@ -382,6 +382,7 @@ publishReport({
         + '- Accounts: each has its own 5h windows and rows; files are prefixed `accountN-`\n'
       : '- Plan: ' + planLabel + '\n')
     + '- Claude Code version: ' + toolVersion('claude') + '\n'
+    + '- super-token-saver version: ' + pluginVersion() + '\n'
     + '- Date: ' + dateStr
     + unknownNote,
   summary: {

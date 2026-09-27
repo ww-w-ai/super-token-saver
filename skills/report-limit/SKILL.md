@@ -79,7 +79,7 @@ node "${PLUGIN_ROOT}"/scripts/report-limit.js --host codex [--date <YYYY-MM-DD> 
 
 Windows per host:
 - Claude Code: 5h windows, rebuilt from the cache.
-- Codex: every limit lane Codex reports (e.g. `codex primary`, 7 days), as Codex reports it. A window reset early ends where the next one starts. A lane that stayed at 0% is left out.
+- Codex: the same 5h windows and files as Claude Code (Codex's own 5h limit when it has one, else 5h blocks), each with how far every Codex limit rose inside it (e.g. `7d 48% → 68%`). A second table lists the limit windows as Codex reports them; one reset early ends where the next one starts, and a lane that stayed at 0% is left out.
 
 If the user doesn't know or skips plan on Claude Code, run without `--plan` (reports as "unknown").
 
@@ -111,7 +111,7 @@ The script outputs JSON to stdout. Parse the result and show the user a brief su
 |---------|--------|------|----------|
 | {account or "-"} | {date} {start}-{end} | ${cost} | {n} |
 
-(Codex: add Limit (`limitId lane`) and Used % (`usedFirst → usedLast`) columns; Window is start → activeEnd; Cost is N/A — Codex has no per-token price.)
+(Codex: add a Limit Used % column from `used` (`from% → to%` per limit); Cost is N/A — Codex has no per-token price. Then list `limits` in one line each: `limitId lane`, `usedFirst% → usedLast%`, requests.)
 
 {If gistUrl: "📎 Data uploaded: {gistUrl}"}
 {If no gistUrl: "⚠️ GitHub CLI not authenticated. Run `gh auth login` first, or manually attach the zip file."}

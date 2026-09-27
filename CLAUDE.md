@@ -109,13 +109,13 @@ the automatic ledger command against the exact transcript, without switching to 
   token count), the rate-limit window length (`WINDOW_SECONDS`, dynamic per Codex's own
   `rate_limits.primary.window_minutes` instead of the fixed 5h `FIVE_HOURS_S`), and plan resolution
   (`CODEX_PLAN_INFO`). `setup-statusline` stays single-host.
-- **`report-limit` is one report on two hosts; only the windows differ.** Claude Code rebuilds 5h
-  windows from the cache; `--host codex` (`scripts/lib/report-limit-codex.js`) reads the limit
-  windows Codex reports in `summary.rateLimitSamples` and never infers one. Everything after the
-  windows is shared: `scripts/lib/report-window.js` (window totals, the Discussion table, the
-  per-window CSV files) and `scripts/lib/report-publish.js` (zip, gist, Discussion, JSON). Do not
-  give Codex its own table or file layout — a Codex report is the Claude Code report plus Limit and
-  Used % columns. Accounts are numbered in the report, never hashed: it is public.
+- **`report-limit` is one report on two hosts.** Both report one row and one CSV per 5h window,
+  rows assigned by `assignWindows`. `--host codex` (`scripts/lib/report-limit-codex.js`) adds what
+  Codex states in `summary.rateLimitSamples`: each row's limit rise, and a second table of the limit
+  windows as Codex reports them (never inferred). Everything else is shared:
+  `scripts/lib/report-window.js` (window totals, the Discussion table, the per-window CSV files) and
+  `scripts/lib/report-publish.js` (zip, gist, Discussion, JSON, versions). Do not give Codex its own
+  rows, table or file layout. Accounts are numbered in the report, never hashed: it is public.
 - **A dual-host skill must not hardcode one host's plugin root.** Claude Code exports
   `CLAUDE_PLUGIN_ROOT`; Codex does not reliably export `CODEX_PLUGIN_ROOT`. Use
   `PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT}}"`, falling back to the skill's own

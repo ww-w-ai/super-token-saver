@@ -47,7 +47,7 @@ const R2 = W2 + 7 * D;
 session('0199aaaa-0000-7000-8000-000000000001',
   [row(N - 5 * D, 1), row(N - 4 * D, 2), row(N - 3 * D + 30, 3), row(N - 3 * D + 300, 4), row(N - D, 5)],
   [
-    sample(N - 5 * D, 10, R1), sample(N - 4 * D, 60, R1 + 3), sample(N - 3.5 * D, 7, R1), sample(N - 3 * D, 100, R1 - 2),
+    sample(N - 5 * D, 10, R1), sample(N - 4 * D, 60, R1 + 3), sample(N - 3.5 * D, 7, R1), sample(N - 3 * D + 30, 100, R1 - 2),
     sample(W2 + 60, 5, R2), sample(N - D, 40, R2 + 1),
     sample(N - 2 * D, 0, N + 5 * D, 'codex_idle', 'secondary'), sample(N - D, 0, N + 6 * D, 'codex_idle', 'secondary'),
   ],
@@ -74,18 +74,28 @@ try {
   cleanup.push(j.reportDir);
   const a1 = j.windows.filter(w => w.account === 1);
   const a2 = j.windows.filter(w => w.account === 2);
-  if (a1.length !== 2) fail(`account 1 windows ${a1.length}, expected 2 (jitter merged, idle lane out)`);
+  const reqs = a1.map(w => w.requests).join(',');
+  if (reqs !== '1,1,2,1') fail(`account 1 5h windows hold ${reqs} requests, expected 1,1,2,1`);
   else {
-    const [w1, w2] = a1;
+    const used = (w) => w.used.map(u => u.from + '>' + u.to).join(' ');
+    if (used(a1[2]) !== '60>100 5>5') fail(`5h window 3 used ${used(a1[2])}, expected W1 60>100 and W2 5>5`);
+    if (used(a1[3]) !== '5>40') fail(`5h window 4 used ${used(a1[3])}, expected W2 5>40`);
+  }
+  if (a2.length !== 1 || a2[0].requests !== 1) fail(`account 2 5h windows ${a2.length}, expected 1 with 1 request`);
+
+  const l1 = j.limits.filter(w => w.account === 1);
+  if (l1.length !== 2) fail(`account 1 limit windows ${l1.length}, expected 2 (jitter merged, idle lane out)`);
+  else {
+    const [w1, w2] = l1;
     if (w1.requests !== 3) fail(`W1 requests ${w1.requests}, expected 3 (cut at the early reset)`);
     if (w1.activeEnd !== W2) fail(`W1 active until ${w1.activeEnd}, expected the next window's start ${W2}`);
     if (w1.usedFirst !== 10 || w1.usedLast !== 100) fail(`W1 used ${w1.usedFirst}→${w1.usedLast}, expected 10→100`);
     if (w2.requests !== 2) fail(`W2 requests ${w2.requests}, expected 2`);
   }
-  if (a2.length !== 1 || a2[0].requests !== 1) fail(`account 2 windows ${a2.length}, expected 1 with 1 request`);
-  if (j.windows.some(w => w.limitId === 'codex_idle')) fail('an idle 0% lane was reported');
+  if (j.limits.some(w => w.limitId === 'codex_idle')) fail('an idle 0% lane was reported');
+
   const files = fs.readdirSync(j.reportDir);
-  const rowsIn = (prefix) => files.filter(f => f.startsWith(prefix + 'window-codex-primary-'))
+  const rowsIn = (prefix) => files.filter(f => f.startsWith(prefix + 'window-'))
     .reduce((n, f) => n + fs.readFileSync(path.join(j.reportDir, f), 'utf8').trim().split('\n').length - 1, 0);
   if (rowsIn('account1-') !== 5 || rowsIn('account2-') !== 1) fail(`window files hold ${rowsIn('account1-')} and ${rowsIn('account2-')} rows, expected 5 and 1`);
   const first = files.find(f => f.startsWith('account1-window-'));
@@ -96,9 +106,10 @@ try {
 
   const b = run(['--blocked']);
   cleanup.push(b.reportDir);
-  if (b.windows.length !== 1 || b.windows[0].usedMax !== 100) fail(`--blocked windows ${b.windows.length}, expected W1 only`);
+  if (b.windows.length !== 1 || b.windows[0].requests !== 2) fail(`--blocked 5h windows ${b.windows.length}, expected the one where W1 reached 100%`);
+  if (b.limits.length !== 1 || b.limits[0].usedMax !== 100) fail(`--blocked limit windows ${b.limits.length}, expected W1 only`);
 
-  if (!failed) console.log('PASS: jitter merged; early reset cuts the window; idle lane out; stale % dropped; accounts split; Claude Code window files; --blocked keeps 100% windows');
+  if (!failed) console.log('PASS: 5h windows as Claude Code with limit rise per window; jitter merged; early reset cuts the limit window; idle lane out; stale % dropped; accounts split; Claude Code window files; --blocked keeps 100% windows');
 } catch (e) {
   fail('report-limit.js --host codex did not run: ' + ((e.stderr && e.stderr.toString().slice(-400)) || e.message));
 } finally {

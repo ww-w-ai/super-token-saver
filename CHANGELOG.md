@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.3] - 2026-09-28
+
+### Changed: the Codex `/report-limit` rows are 5h windows
+
+- A Codex report had one row per 7-day limit window, three rows for a week. Its rows are now the
+  Claude Code report's 5h windows, with the same per-window CSV files, and each row carries how far
+  every Codex limit rose inside it (`7d 48% → 68%`). Codex's own 5h limit sets the windows when it
+  has one; otherwise they are 5h blocks, as on Claude Code. The limit windows stay as a second
+  table.
+- The Context section of both reports names the super-token-saver version. The Codex report drops
+  its host explanation line and lists the same items as the Claude Code report.
+
 ## [3.7.2] - 2026-09-28
 
 ### Changed: the Codex `/report-limit` is the Claude Code report

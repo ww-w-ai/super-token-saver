@@ -46,6 +46,15 @@ function toolVersion(cmd) {
   }
 }
 
+/** This plugin's version, from its manifest, or 'unknown'. */
+function pluginVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 function zipReport(reportDir) {
   const zipFile = reportDir + '.zip';
   try {
@@ -155,4 +164,4 @@ function publishReport({ reportDir, isGistFile, title, buildBody, summary, dryRu
   }, null, 2));
 }
 
-module.exports = { log, makeReportDir, accountHeading, toolVersion, publishReport };
+module.exports = { log, makeReportDir, accountHeading, toolVersion, pluginVersion, publishReport };
