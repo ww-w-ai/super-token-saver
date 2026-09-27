@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.1] - 2026-09-28
+
+### Added: `/report-limit` on Codex
+
+- Codex states each limit's used percent, window length and reset time, but not how many tokens
+  one percent is. `/report-limit` on Codex (`--host codex`) pairs every limit window Codex reports
+  with the tokens spent inside it — requests, sessions, input, cached input, output, models — and
+  opens the same pre-filled Discussion. The plan comes from Codex; it is not asked.
+- A window that resets early (measured: 49 s after reaching 100%) ends where the next window of
+  the same lane starts, so each request is counted in one window per lane. Resets reported a few
+  seconds apart are one window. A lane that stays at 0% is left out: its reset keeps moving and
+  it says nothing about tokens per percent.
+- Files: `codex-requests.csv`, `codex-ratelimit.csv` (used-% changes), `sessions.csv`,
+  `models.csv`; `accountN-` prefixed with two or more accounts. `blocked` keeps windows that
+  reached 100%.
+- The zip, gist, Discussion and JSON steps moved to `scripts/lib/report-publish.js`, shared by both
+  hosts.
+
+### Changed: `/report-limit` sends every account in one report
+
+- With two or more login accounts on record, one report now covers all of them, split by account.
+  Each account's windows come from its own reset times and activity; its rows and its
+  `ratelimit.csv` hold only its own requests. Before, only the current login was sent, and its
+  windows were still cut from every account's resets and activity.
+- Accounts appear as `Account 1` (the current login), `Account 2`, … in the Discussion and as the
+  `accountN-` prefix on the window and ratelimit files — never as hashes, since the report is
+  public. `--plan` describes Account 1. With one account, files keep their old names.
+- The JSON summary adds `accounts` and an `account` field on each window.
+
+### Fixed: `/report-limit` counted a request in two windows
+
+- Windows were built hour by hour, so a window starting mid-hour (23:10) and the block anchored at
+  the top of that hour (23:00) both became windows holding the same requests. `/report-limit` now
+  assigns each request to exactly one window, the way `/usage-view` does. On the maintainer's
+  last 7 days this removed 5 duplicate windows.
+- The Discussion's **Total** row counted every session as one (`timeline.csv` names were
+  compared). It now counts distinct sessions.
+
 ## [3.7.0] - 2026-09-27
 
 ### Fixed: `/usage-view` counted the same request more than once

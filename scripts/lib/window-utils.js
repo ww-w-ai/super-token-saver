@@ -73,6 +73,20 @@ function mergeWindows(windowStarts, windowDuration = FIVE_HOURS_S) {
 }
 
 /**
+ * Windows that never overlap: each runs until the earlier of its own end and the next start.
+ * A limit can reset before its scheduled time; the new window then takes over, and merging the
+ * two would make one span hold both windows' usage (measured: 9.5 h under one 5h label).
+ * @returns {{start: number, end: number}[]} sorted, disjoint
+ */
+function splitWindows(windowStarts, windowDuration = FIVE_HOURS_S) {
+  const sorted = [...new Set(windowStarts)].sort((a, b) => a - b);
+  return sorted.map((start, i) => ({
+    start,
+    end: i + 1 < sorted.length ? Math.min(start + windowDuration, sorted[i + 1]) : start + windowDuration,
+  }));
+}
+
+/**
  * Scan ratelimit CSVs and return merged windows.
  * @param {string} cacheBase - Path to cache base directory
  * @returns {{start: number, end: number}[]} Sorted, merged windows
@@ -158,25 +172,6 @@ function buildHourToWindowMap(activeHours, rlWindows) {
 }
 
 /**
- * Build global 5h window map from ALL projects' timeline + ratelimit data.
- * Always scans every project regardless of any project filter.
- * Use this for 5h window boundary calculation — never scope this to a single project.
- *
- * IMPORTANT: Anthropic's 5h rate limit is account-wide, not per-project.
- * If you only use one project's data, the window boundaries will be wrong
- * because other projects' usage contributes to the same 5h window.
- * Always use this function (not buildHourToWindowMap directly) for window calculation.
- *
- * @returns {Map<number, number>} hourFloor → 5h window start mapping (account-wide)
- */
-function buildGlobalWindowMap() {
-  const allHours = collectActiveHours(/* no filter — all projects */);
-  const rlStarts = scanRatelimitWindows();
-  const rlWindows = mergeWindows(rlStarts, FIVE_HOURS_S);
-  return buildHourToWindowMap(allHours, rlWindows);
-}
-
-/**
  * Build a ts→window mapper using ratelimit 5h_reset boundaries.
  * Anthropic switched 5h windows from hour-aligned to first-message+5h
  * around 2026-04-23, making boundaries minute-precise. This mapper
@@ -185,25 +180,51 @@ function buildGlobalWindowMap() {
  * Returns: { tsToWindow(ts) -> windowStart|null, windows: [{start,end}] }
  * @param {(sessionId: string, tsSec: number) => boolean} [keepRow] see scanRatelimitWindows
  */
-function buildGlobalTsMapper(keepRow) {
+function buildGlobalTsMapper(keepRow, { splitOverlaps = false } = {}) {
   const rlStarts = scanRatelimitWindows(undefined, keepRow);
-  const windows = mergeWindows(rlStarts, FIVE_HOURS_S);
+  const windows = splitOverlaps ? splitWindows(rlStarts, FIVE_HOURS_S) : mergeWindows(rlStarts, FIVE_HOURS_S);
+  // Merged windows are sorted and disjoint: binary search for the last start at or before ts.
   function tsToWindow(ts) {
-    for (const w of windows) {
-      if (ts >= w.start && ts < w.end) return w.start;
+    let lo = 0, hi = windows.length - 1, found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (windows[mid].start <= ts) { found = mid; lo = mid + 1; } else hi = mid - 1;
     }
-    return null;
+    return found >= 0 && ts < windows[found].end ? windows[found].start : null;
   }
   return { tsToWindow, windows };
+}
+
+/**
+ * Give every row exactly one 5h window start (`row.win`). A row inside a ratelimit window
+ * takes that window's start; the rest are grouped into 5h blocks, each anchored by the
+ * earliest row not yet covered. Rows must carry a numeric `ts` (epoch seconds).
+ * @param {Array<{ts: number, win?: number}>} rows mutated in place
+ * @param {(ts: number) => number|null} tsToWindow from buildGlobalTsMapper
+ */
+function assignWindows(rows, tsToWindow) {
+  const uncovered = [];
+  for (const row of rows) {
+    const win = tsToWindow(row.ts);
+    if (win !== null) row.win = win;
+    else uncovered.push(row);
+  }
+  uncovered.sort((a, b) => a.ts - b.ts);
+  let groupStart = null;
+  for (const row of uncovered) {
+    if (groupStart === null || row.ts >= groupStart + FIVE_HOURS_S) groupStart = row.ts;
+    row.win = groupStart;
+  }
 }
 
 module.exports = {
   FIVE_HOURS_S,
   scanRatelimitWindows,
   mergeWindows,
+  splitWindows,
   detectAndMergeWindows,
   collectActiveHours,
   buildHourToWindowMap,
-  buildGlobalWindowMap,
   buildGlobalTsMapper,
+  assignWindows,
 };

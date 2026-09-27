@@ -159,7 +159,7 @@ Codex écrit ses sessions dans `~/.codex/sessions/`, Claude Code dans `~/.claude
 
 Deux détails séparent une liste correcte d'une liste plausible mais fausse. Le `session_id` de Codex est en fait l'id du **thread**, hérité par tout sous-agent lancé — les sessions sont donc identifiées via `payload.id`, et les rollouts de sous-agents sont filtrés de la même façon que Claude Code filtre déjà ses propres transcriptions de sous-tâches. Et `<codex_internal_context source="goal">` est injecté par la machine : il reste dans le contexte restauré mais n'est jamais compté comme un tour que vous avez tapé.
 
-Le plugin s'installe aussi dans Codex — voir **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit` et `setup-statusline` restent pour l'instant réservés à Claude Code.
+Le plugin s'installe aussi dans Codex — voir **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` reste pour l'instant réservé à Claude Code. `report-limit` signale désormais aussi les fenêtres de limite de Codex ; `setup-statusline` reste réservé à Claude Code.
 
 ---
 
@@ -270,7 +270,7 @@ Survolez n'importe quel point pour voir le texte réel du prompt, le nombre de t
 
 Anthropic ne publie pas la formule exacte pour la fenêtre de 5 heures. Découvrons-la ensemble.
 
-Exécutez `/report-limit` — aucune limite de débit requise. Il envoie chaque fenêtre de 5 heures de vos 7 derniers jours sous forme de discussion GitHub pré-remplie ; vérifiez-la et envoyez-la. `/report-limit blocked` n'envoie que les fenêtres où vous avez atteint la limite. Plus nous collectons de données, plus la formule devient claire.
+Exécutez `/report-limit` — aucune limite de débit requise. Il envoie chaque fenêtre de 5 heures de vos 7 derniers jours sous forme de discussion GitHub pré-remplie ; vérifiez-la et envoyez-la. `/report-limit blocked` n'envoie que les fenêtres où vous avez atteint la limite. Plus nous collectons de données, plus la formule devient claire. Avec deux comptes connectés ou plus, un seul rapport couvre chaque compte séparément — chacun avec ses propres fenêtres de 5 heures — et les nomme Account 1 (le compte actuellement connecté), Account 2, et ainsi de suite.
 
 ---
 

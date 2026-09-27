@@ -159,7 +159,7 @@ Codex menulis sesinya ke `~/.codex/sessions/`; Claude Code menulis ke `~/.claude
 
 Dua butiran inilah yang membezakan senarai yang betul daripada senarai yang kelihatan betul tetapi salah: `session_id` Codex sebenarnya ialah id **thread**, yang diwarisi oleh mana-mana sub-agent yang di-spawn, jadi sesi dikunci mengikut `payload.id` dan rollout sub-agent ditapis dengan cara yang sama seperti transkrip subtask Claude Code sudah ditapis. Manakala `<codex_internal_context source="goal">` disuntik secara automatik oleh sistem, jadi ia kekal dalam konteks yang dipulihkan tetapi tidak pernah dikira sebagai turn yang anda taip.
 
-Plugin ini turut dipasang dalam Codex — lihat **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit` dan `setup-statusline` buat masa ini kekal khusus untuk Claude Code sahaja.
+Plugin ini turut dipasang dalam Codex — lihat **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` buat masa ini kekal khusus untuk Claude Code sahaja. `report-limit` kini turut melaporkan tetingkap had Codex; `setup-statusline` kekal khusus untuk Claude Code sahaja.
 
 ---
 
@@ -270,7 +270,7 @@ Layang-layangkan kursor ke mana-mana titik untuk melihat teks prompt sebenar, bi
 
 Anthropic tidak menerbitkan formula tepat untuk tetingkap 5 jam. Mari kita fikirkan bersama.
 
-Jalankan `/report-limit` — tidak perlu mencapai had kadar. Ia menghantar setiap tetingkap 5 jam dalam 7 hari terakhir anda sebagai GitHub Discussion yang telah diisi lebih dahulu; semak dan hantar. `/report-limit blocked` hanya menghantar tetingkap di mana anda mencapai had. Lebih banyak data yang kami kumpulkan, lebih jelas formulanya.
+Jalankan `/report-limit` — tidak perlu mencapai had kadar. Ia menghantar setiap tetingkap 5 jam dalam 7 hari terakhir anda sebagai GitHub Discussion yang telah diisi lebih dahulu; semak dan hantar. `/report-limit blocked` hanya menghantar tetingkap di mana anda mencapai had. Lebih banyak data yang kami kumpulkan, lebih jelas formulanya. Jika terdapat dua atau lebih log masuk direkodkan, satu laporan merangkumi setiap akaun secara berasingan — masing-masing dengan tetingkap 5 jamnya sendiri — dan menamakannya Account 1 (log masuk semasa), Account 2, dan seterusnya.
 
 ---
 

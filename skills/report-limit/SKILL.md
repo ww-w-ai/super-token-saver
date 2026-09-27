@@ -1,13 +1,17 @@
 ---
 name: report-limit
-description: 'Report your 5h and weekly limit data - we''re mapping the rate limit formula that is not published anywhere'
+description: 'Report your 5h and weekly limit data (Claude Code or Codex) - we''re mapping how many tokens a limit is, which neither host publishes'
 when_to_use: Use when the user wants to contribute rate-limit data, hit a limit or not. Triggers on "report limit", "limit report", "rate limit report".
-host: claude-code
+host: dual
 ---
 
-> Claude Code only **today**. Codex reports its rate limits directly (`rate_limits.primary.used_percent`, `resets_at`), so this is a port that has not been done yet, not a limitation — see `docs/CODEX-PORT-BACKLOG.md`.
+Dual-host. Detect the host you are running under:
 
-Report rate-limited 5-hour windows to GitHub Discussions. Pure rule-based — no LLM reasoning needed.
+- **Claude Code**: Claude Code does not state its 5h window, so the script rebuilds it from cached timelines and statusline samples. Ask the plan (below), then run with `--host claude`.
+- **Codex**: Codex states each limit outright — used percent, window length, reset instant. The script pairs every recorded limit window with the tokens spent inside it. Do not ask the plan: Codex records it. Run with `--host codex`.
+- Resolve `PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT}}"`, falling back to two levels above this skill's directory if both are unset.
+
+Report 5-hour and weekly limit windows to GitHub Discussions. Pure rule-based — no LLM reasoning needed.
 
 ## Help
 
@@ -27,7 +31,7 @@ No manual input needed. Just run it and confirm in your browser.
 Options:
   (nothing)     Every 5h window of the last 7 days, limited or not
   <date>        Every 5h window on that date (e.g. /report-limit 2026-04-01)
-  blocked       Only rate-limited windows, across all cached data
+  blocked       Only windows where you hit the limit, across all cached data
   help          Show this help
 
 Examples:
@@ -40,7 +44,7 @@ Do not run any analysis. Just display the help text and stop.
 
 ## Execution
 
-Before running, ask the user's plan if not already known. The prompt message MUST be in the user's language (detect from conversation context). The table content (Plan names, prices) stays in English since they are proper nouns.
+**Claude Code only:** before running, ask the user's plan if not already known. The prompt message MUST be in the user's language (detect from conversation context). The table content (Plan names, prices) stays in English since they are proper nouns.
 
 > Select your current Claude plan. The report will be generated based on your plan type.
 >
@@ -62,19 +66,26 @@ Before running, ask the user's plan if not already known. The prompt message MUS
 
 Map user input to `--plan` values: 1=pro, 2=max100, 3=max200, 4=team, 5=team_premium, 6=enterprise, 7=bedrock, 8=foundry, 9=vertex
 
-Run the standalone script with `--plan` and at most one of `--date` / `--blocked`:
+Run the standalone script for your host (`--plan` on Claude Code only) and at most one of `--date` / `--blocked`:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/report-limit.js --plan <plan> [--date <YYYY-MM-DD> | --blocked]
+node "${PLUGIN_ROOT}"/scripts/report-limit.js --host claude --plan <plan> [--date <YYYY-MM-DD> | --blocked]
+node "${PLUGIN_ROOT}"/scripts/report-limit.js --host codex [--date <YYYY-MM-DD> | --blocked]
 ```
 
-- No argument → every 5h window of the last 7 days, rate-limited or not.
-- A date argument (e.g. `/report-limit 2026-04-01`) → pass `--date 2026-04-01`: every 5h window overlapping that date.
-- `blocked` (e.g. `/report-limit blocked`) → pass `--blocked`: only rate-limited windows, across all cached data.
+- No argument → every window of the last 7 days, limit hit or not.
+- A date argument (e.g. `/report-limit 2026-04-01`) → pass `--date 2026-04-01`: every window overlapping that date.
+- `blocked` (e.g. `/report-limit blocked`) → pass `--blocked`: only windows where the limit was hit (Codex: reached 100%), across all cached data.
 
-If the user doesn't know or skips plan, run without `--plan` (reports as "unknown").
+Windows per host:
+- Claude Code: 5h windows, rebuilt from the cache.
+- Codex: every limit lane Codex reports (e.g. `codex primary`, 7 days), as Codex reports it. A window reset early ends where the next one starts. A lane that stayed at 0% is left out.
 
-### Unknown model handling (run inline, do NOT stop the skill)
+If the user doesn't know or skips plan on Claude Code, run without `--plan` (reports as "unknown").
+
+With two or more login accounts on record, one report covers them all, split by account: each account has its own windows, rows, and files. Accounts appear as `Account 1` (the current login), `Account 2`, … — never as hashes. `--plan` describes Account 1.
+
+### Unknown model handling (Claude Code only; run inline, do NOT stop the skill)
 
 The script fails with exit code 2 and prints an `ERROR:UNKNOWN_MODEL` block to stderr when it encounters a model not registered in `scripts/model-pricing.json`. Handle it inline, then continue:
 
@@ -94,11 +105,13 @@ The script fails with exit code 2 and prints an `ERROR:UNKNOWN_MODEL` block to s
 The script outputs JSON to stdout. Parse the result and show the user a brief summary:
 
 ```
-💀 Found {N} rate-limited window(s).
+💀 Found {N} window(s).
 
-| Window | Cost | Requests |
-|--------|------|----------|
-| {date} {start}-{end} | ${cost} | {n} |
+| Account | Window | Cost | Requests |
+|---------|--------|------|----------|
+| {account or "-"} | {date} {start}-{end} | ${cost} | {n} |
+
+(Codex: columns Account | Limit (`limitId lane`) | Window (start → activeEnd) | Used % (usedFirst → usedLast) | Requests. No cost: Codex has no per-token price.)
 
 {If gistUrl: "📎 Data uploaded: {gistUrl}"}
 {If no gistUrl: "⚠️ GitHub CLI not authenticated. Run `gh auth login` first, or manually attach the zip file."}
@@ -111,7 +124,7 @@ Discussion opened in browser. Review and submit.
 
 - If the script exits with code 1: "No cached data found. Run `/usage-view` first."
 - If the script exits with code 2: stderr contains `ERROR:UNKNOWN_MODEL`. Handle it inline via the "Unknown model handling" procedure above — do NOT treat as a fatal failure.
-- If the script exits with code 0 but `windows` is empty: "No rate-limited windows found."
+- If the script exits with code 0 and prints no JSON: "No windows found." (`blocked`: "No rate-limited windows found.")
 
 ## Prerequisites
 

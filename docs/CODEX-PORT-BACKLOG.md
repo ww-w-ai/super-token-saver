@@ -1,7 +1,7 @@
 # Codex port backlog — the rest of the dual-host surface
 
-`s-continue`, `s-compact` and `usage-view` ship to both hosts. The two remaining skills do not,
-and one of them is a deliberate stop rather than a task.
+`s-continue`, `s-compact`, `usage-view` and `report-limit` ship to both hosts. The remaining skill
+does not, and it is a deliberate stop rather than a task.
 
 ## What Codex actually records
 
@@ -34,28 +34,15 @@ The timeline consumes running-total deltas (`createSessionUsageTracker` in `scri
 reported as a purchased-credit equivalent, and the window length is data, not a constant. The
 rules live in `CLAUDE.md` under the dual-host skills.
 
-## 2. `report-limit` → Codex (port)
+## 2. `report-limit` → Codex (shipped in 3.7.1)
 
-`report-limit` exists because Anthropic does not publish the 5-hour rate-limit formula, so the
-plugin infers it. **That premise does not hold on Codex**, which reports the limit directly.
-
-So the Codex version is a different skill wearing the same name:
-
-- Read `rate_limits.primary` — `used_percent`, `window_minutes`, `resets_at` — and report it.
-- Nothing needs deriving, so there is nothing to crowd-source. **Decide whether the Codex build
-  submits anything to the GitHub discussion at all**, or simply displays the limit locally. Sending
-  data nobody has to reverse-engineer is noise.
-- `plan_type` (`prolite`, …) and `credits.balance` have no Claude Code counterpart; both belong in
-  the local display.
-
-**Window mismatch — the single biggest assumption to break.** Claude Code's window is 5 hours and it
-is hardcoded across `window-utils.js`, the dashboard timeline, and the statusline. The observed
-Codex `primary.window_minutes` is **10080 (7 days)**, and `secondary` was null in the sample. Treat
-the window length as data carried alongside each sample, not as a constant. Until that is done, a
-Codex sample rendered on a 5-hour axis is simply wrong.
-
-Verify against more than one plan before fixing the shape: this sample is one account on
-`plan_type: prolite`, and `secondary`/`individual_limit` may be populated elsewhere.
+Codex reports each limit's used percent, window length and reset time, but not how many tokens one
+percent is — so there is still something to crowd-source. `report-limit --host codex`
+(`scripts/lib/report-limit-codex.js`) pairs every recorded window with the tokens spent inside it and
+submits it to the same Discussion. Windows are read from `summary.rateLimitSamples`, never inferred;
+the window length is data per sample (observed: `codex` primary 7 days, `codex_bengalfox` 5 hours and
+7 days; plans `prolite` and `pro`). Rules are in `CLAUDE.md`; the test is
+`scripts/test-report-limit-codex.js`.
 
 ## 3. `setup-statusline` → research, not a port
 

@@ -108,8 +108,12 @@ the automatic ledger command against the exact transcript, without switching to 
   (`ratesFor()`, all-zero for Codex so `model-pricing.json`'s Anthropic rates never touch a Codex
   token count), the rate-limit window length (`WINDOW_SECONDS`, dynamic per Codex's own
   `rate_limits.primary.window_minutes` instead of the fixed 5h `FIVE_HOURS_S`), and plan resolution
-  (`CODEX_PLAN_INFO`). `report-limit` and `setup-statusline` still read Claude Code's own
-  billing/rate-limit records and stay single-host.
+  (`CODEX_PLAN_INFO`). `setup-statusline` stays single-host.
+- **`report-limit` is dual-host, with two builders and one publisher.** Claude Code rebuilds 5h
+  windows from the cache; `--host codex` (`scripts/lib/report-limit-codex.js`) reads the limit
+  windows Codex reports in `summary.rateLimitSamples` and never infers one. Both hand their CSVs to
+  `scripts/lib/report-publish.js` (zip, gist, Discussion, JSON). Accounts are numbered in the
+  report, never hashed: it is public.
 - **A dual-host skill must not hardcode one host's plugin root.** Claude Code exports
   `CLAUDE_PLUGIN_ROOT`; Codex does not reliably export `CODEX_PLUGIN_ROOT`. Use
   `PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT}}"`, falling back to the skill's own
@@ -217,6 +221,10 @@ scripts/test-report-limit-exclusions.js
 scripts/test-workflow-agent-ids.js
   → gates summary.accountChanges: login account per session read only from the
     `session_context` attachment, stored as a 12-hex sha256 hash, one entry per change
+
+scripts/test-report-limit-codex.js
+  → gates /report-limit --host codex: reset jitter is one window, an early reset ends the window
+    where the next starts, a 0% lane is left out, accounts split, --blocked = reached 100%
 
 scripts/test-window-account.js
   → gates per-account 5h windows: an account's tab takes window boundaries from its own

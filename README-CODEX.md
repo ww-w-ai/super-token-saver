@@ -15,6 +15,7 @@ Codex writes every session to `~/.codex/sessions/`. Claude Code writes every ses
 | `s-continue` | Restore a previous Claude Code **or** Codex session — pick from a list, or jump straight to the last one. |
 | `s-compact` | Write a handoff before you clear, capturing what the transcript cannot hold: subagent findings, tool-output numbers, killed approaches. |
 | `usage-view` | See where your Codex usage went: an interactive HTML dashboard with an AI analysis, built from your rollouts. |
+| `report-limit` | Share your Codex limit data: each limit window Codex reports, paired with the tokens you spent in it, as a pre-filled GitHub Discussion. |
 
 The handoff is stored per project, not per tool. End a sprint in Codex, pick it up in Claude Code, and the file is already there. Go back the other way and it still is. No other plugin restores both tools' history, so when one side runs out of budget the other picks up from the same line.
 
@@ -53,6 +54,8 @@ codex plugin marketplace upgrade ww-w-ai
 /s-compact            write the handoff for whoever comes next
 /usage-view           usage dashboard for the last month
 /usage-view last 7 days
+/report-limit          report limit windows of the last 7 days
+/report-limit blocked  only windows that reached 100%
 ```
 
 ## Usage dashboard
@@ -80,7 +83,7 @@ The skill names are the same on both hosts, so a command you learn in one works 
 
 ## What it does not do
 
-`report-limit` is Claude Code only for now — Codex records its rate limit in the rollout outright, so that one is a port that has not happened yet, not a limitation. `setup-statusline` is a different case: Codex already has its own status line, configured through `status_line` in `config.toml`.
+`setup-statusline` stays Claude Code only: Codex already has its own status line, configured through `status_line` in `config.toml`.
 
 ## License
 

@@ -165,7 +165,7 @@ Codex schreibt seine Sessions nach `~/.codex/sessions/`, Claude Code nach `~/.cl
 
 Zwei Details entscheiden darüber, ob die Liste stimmt oder nur plausibel aussieht: Codexʼ `session_id` ist die **Thread**-ID, die ein gespawnter Subagent erbt — deshalb werden Sessions über `payload.id` unterschieden, und Subagent-Rollouts werden genauso herausgefiltert wie Claude Codes eigene Subtask-Transkripte. Und `<codex_internal_context source="goal">` wird maschinell eingefügt, bleibt also im wiederhergestellten Kontext erhalten, zählt aber nie als eine von dir getippte Runde.
 
-Das Plugin installiert sich auch in Codex — siehe **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit` und `setup-statusline` bleiben vorerst Claude Code vorbehalten.
+Das Plugin installiert sich auch in Codex — siehe **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` bleibt vorerst Claude Code vorbehalten. `report-limit` meldet jetzt auch Codex-Limit-Fenster; `setup-statusline` bleibt weiterhin Claude Code vorbehalten.
 
 ---
 
@@ -276,7 +276,7 @@ Max-Plan-Nutzer erreichen das Rate-Limit und fragen sich warum. API-Nutzer öffn
 
 Anthropic veröffentlicht die genaue Formel für das 5-Stunden-Fenster nicht. Lass sie uns gemeinsam herausfinden.
 
-Führe `/report-limit` aus — kein Rate-Limit nötig. Es sendet jedes 5-Stunden-Fenster deiner letzten 7 Tage als vorausgefüllte GitHub-Discussion; überprüfe sie und reiche sie ein. `/report-limit blocked` sendet nur die Fenster, in denen du das Limit erreicht hast. Je mehr Daten wir sammeln, desto klarer wird die Formel.
+Führe `/report-limit` aus — kein Rate-Limit nötig. Es sendet jedes 5-Stunden-Fenster deiner letzten 7 Tage als vorausgefüllte GitHub-Discussion; überprüfe sie und reiche sie ein. `/report-limit blocked` sendet nur die Fenster, in denen du das Limit erreicht hast. Je mehr Daten wir sammeln, desto klarer wird die Formel. Sind zwei oder mehr Logins erfasst, deckt ein Bericht jedes Konto ab, aufgeschlüsselt nach Konto — jedes mit eigenen 5-Stunden-Fenstern — und benennt sie Account 1 (der aktuelle Login), Account 2 und so weiter.
 
 ---
 

@@ -15,6 +15,7 @@ Codex 把每个会话写入 `~/.codex/sessions/`。Claude Code 把每个会话�
 | `s-continue` | 恢复此前的 Claude Code **或** Codex 会话——从列表中选择,或直接跳到最近一次。 |
 | `s-compact` | 在清空上下文前写交接记录,保存转写记录留不住的内容:子代理的发现、工具输出中的数字、被放弃的方案。 |
 | `usage-view` | 查看你的 Codex 用量都花在了哪里:基于 rollout 生成、带 AI 分析的交互式 HTML 仪表盘。 |
+| `report-limit` | 分享你的 Codex 速率限制数据:把 Codex 报告的每个速率限制窗口,与你在其中花费的 token 配对,生成一份预填好的 GitHub Discussion。 |
 
 交接文件按项目保存,而不是按工具保存。在 Codex 里结束一个冲刺,再到 Claude Code 里接着做,文件已经在那里等着。反过来回到 Codex 也一样。能同时恢复两个工具历史的插件只有这一个,所以一边的额度用完,就在另一边从同一行接着做。
 
@@ -53,6 +54,8 @@ codex plugin marketplace upgrade ww-w-ai
 /s-compact            为下一个接手的人写交接记录
 /usage-view           最近一个月的用量仪表盘
 /usage-view last 7 days
+/report-limit          报告最近 7 天的速率限制窗口
+/report-limit blocked  只发送达到 100% 的窗口
 ```
 
 ## 用量仪表盘
@@ -79,7 +82,7 @@ rollout 的 `L{n}` 标记。
 
 ## 这个插件不做什么
 
-`report-limit` 目前仅支持 Claude Code —— Codex 同样会在 rollout 中直接给出速率限制,所以这只是尚未移植,而非做不到。`setup-statusline` 情况不同:Codex 本身已有状态栏,通过 `config.toml` 中的 `status_line` 配置。
+`setup-statusline` 目前仍只支持 Claude Code:Codex 本身已有状态栏,通过 `config.toml` 中的 `status_line` 配置。
 
 ## 许可证
 

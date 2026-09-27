@@ -158,7 +158,7 @@ Codexはセッションを `~/.codex/sessions/` に、Claude Codeは `~/.claude/
 
 正しい一覧と、もっともらしいが間違った一覧を分けるのはこの二点だ。Codexの `session_id` はサブエージェントがそのまま引き継ぐ **スレッド** idなので、セッションは `payload.id` で識別し、サブエージェントのrolloutはClaude Codeがsubtaskのトランスクリプトを除外するのと同じ方法で取り除く。そして `<codex_internal_context source="goal">` はシステムが自動で挿入するものなので、復元後のコンテキストには残るが、ユーザーが打ったターンとしては数えない。
 
-このプラグインはCodexにもインストールされる — **[README-CODEX.md](./README-CODEX.md)**（[한국어](./README-CODEX.ko.md)・[日本語](./README-CODEX.ja.md)・[简体中文](./README-CODEX.zh-Hans.md)）を参照。`usage-view`、`report-limit`、`setup-statusline` は今のところClaude Code専用のまま。
+このプラグインはCodexにもインストールされる — **[README-CODEX.md](./README-CODEX.md)**（[한국어](./README-CODEX.ko.md)・[日本語](./README-CODEX.ja.md)・[简体中文](./README-CODEX.zh-Hans.md)）を参照。`usage-view` は今のところClaude Code専用のまま。`report-limit` は今ではCodexのレート制限ウィンドウも報告する。`setup-statusline` は引き続きClaude Code専用のまま。
 
 ---
 
@@ -269,7 +269,7 @@ Max Planユーザーはレート制限に達して理由を不思議に思う。
 
 Anthropicは5時間ウィンドウの正確な計算式を公開していない。一緒に解明しよう。
 
-`/report-limit` を実行する — レート制限に達している必要はない。過去7日間の5時間ウィンドウすべてを、事前入力済みのGitHub Discussionとして送信する。内容を確認してから送信する。`/report-limit blocked` は制限に達したウィンドウだけを送信する。データが集まるほど、計算式が明確になる。
+`/report-limit` を実行する — レート制限に達している必要はない。過去7日間の5時間ウィンドウすべてを、事前入力済みのGitHub Discussionとして送信する。内容を確認してから送信する。`/report-limit blocked` は制限に達したウィンドウだけを送信する。データが集まるほど、計算式が明確になる。ログインが2つ以上記録されている場合、1回のレポートで全アカウントを分けて網羅し、それぞれに専用の5時間ウィンドウを持たせ、Account 1(現在のログイン)、Account 2、という名前を付ける。
 
 ---
 

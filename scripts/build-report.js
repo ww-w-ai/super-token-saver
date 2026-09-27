@@ -59,7 +59,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { buildGlobalWindowMap, buildGlobalTsMapper, FIVE_HOURS_S } = require('./lib/window-utils');
+const { buildGlobalTsMapper, assignWindows, FIVE_HOURS_S } = require('./lib/window-utils');
 const { forHost, migrateFromYYMM, extractProjectName, subagentIdFromPath, projectNameFromCwd, CACHE_BASE: CACHE_DIR } = require('./lib/cache-paths');
 const { PLAN_INFO: PLAN_INFO_ALL, CODEX_PLAN_INFO, resolveCodexPlanChoice } = require('./lib/plan-info');
 const { round2 } = require('./lib/format');
@@ -67,7 +67,7 @@ const { SUPPORTED_LOCALES, resolveLocale } = require('./lib/locale');
 const { MODEL_PRICING, DEFAULT_PRICING, getRates } = require('./lib/pricing');
 const { selectLongestRateLimitLane, clusterUsagePointsByModel, computeCodexCreditEquivalent } = require('./lib/codex-usage');
 const { dropReplayedRequests } = require('./lib/request-dedup');
-const { loadAccountIndex, accountAt } = require('./lib/accounts');
+const { loadAccountIndex, accountOf } = require('./lib/accounts');
 const _subagentSep = /[/\\]subagents[/\\]/;
 function isSubagentSession(session) {
   return !!(session && (session.isSubagent === true || (session.filePath && _subagentSep.test(session.filePath))));
@@ -682,7 +682,7 @@ function keepAccountRows(timelines, account) {
   for (const [sid, rows] of timelines) {
     const info = _sessionProjectMap.get(sid);
     const owner = (info && info.parentSessionId) || sid;
-    const kept = rows.filter((r) => (accountAt(accountIndex, owner, r.ts) || accountIndex.current) === account);
+    const kept = rows.filter((r) => accountOf(accountIndex, owner, r.ts) === account);
     dropped += rows.length - kept.length;
     if (kept.length === 0) timelines.delete(sid);
     else if (kept.length !== rows.length) timelines.set(sid, kept);
@@ -1578,7 +1578,6 @@ await ensureCompactCaches(allSessionIds);
 // Pre-4/23 hour-aligned data is handled by the same algorithm naturally
 // because :00 boundaries are still valid ts values.
 
-const uncoveredRows = [];
 if (isCodex) {
   const canonical = raw.canonicalRateLimits || {};
   const lane = calendarWindowSource === 'canonical_rate_limit'
@@ -1598,28 +1597,16 @@ if (isCodex) {
   // Window boundaries come from this report's account only; another account's resets would
   // merge overlapping windows into one span longer than five hours.
   const { tsToWindow } = buildGlobalTsMapper(accountIndex.filtering
-    ? (sid, ts) => (accountAt(accountIndex, sid, ts) || accountIndex.current) === reportAccount
+    ? (sid, ts) => accountOf(accountIndex, sid, ts) === reportAccount
     : undefined);
+  const allRows = [];
   for (const [, rows] of allTimelines) {
     for (const row of rows) {
-      const ts = typeof row.ts === 'number' ? row.ts : Math.floor(new Date(row.ts).getTime() / 1000);
-      row.ts = ts;
-      const win = tsToWindow(ts);
-      if (win !== null) row.win = win;
-      else uncoveredRows.push({ row, ts });
+      row.ts = typeof row.ts === 'number' ? row.ts : Math.floor(new Date(row.ts).getTime() / 1000);
+      allRows.push(row);
     }
   }
-}
-
-// Fallback: group uncovered rows into 5h blocks anchored by earliest ts.
-// Used when timeline activity exists without ratelimit coverage.
-uncoveredRows.sort((a, b) => a.ts - b.ts);
-let groupStart = null;
-for (const { row, ts } of uncoveredRows) {
-  if (groupStart === null || ts >= groupStart + WINDOW_SECONDS) {
-    groupStart = ts;
-  }
-  row.win = groupStart;
+  assignWindows(allRows, tsToWindow);
 }
 
 // Group timeline rows by win column

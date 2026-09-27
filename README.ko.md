@@ -163,7 +163,7 @@ Claude Code와 Codex는 서로의 대화 기록을 읽지 못합니다. Claude C
 
 목록이 맞게 나오느냐, 그럴듯하지만 틀리게 나오느냐는 두 가지에 달려 있습니다. 첫째, Codex의 `session_id`는 **스레드** id라서 서브에이전트가 그대로 물려받습니다. 그래서 세션은 `payload.id`로 구분하고, 서브에이전트의 rollout은 Claude Code의 subtask 트랜스크립트를 걸러내는 것과 같은 방식으로 뺍니다. 둘째, `<codex_internal_context source="goal">`는 시스템이 넣은 것이라 복원된 컨텍스트에는 남기되 사용자가 친 턴으로는 세지 않습니다.
 
-이 플러그인은 Codex에도 설치됩니다. **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md))를 보세요. `usage-view`도 Codex 세션을 읽습니다. 비용은 구매 크레딧으로 환산해 보여줍니다. `report-limit`과 `setup-statusline`은 아직 Claude Code 전용입니다.
+이 플러그인은 Codex에도 설치됩니다. **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md))를 보세요. `usage-view`도 Codex 세션을 읽습니다. 비용은 구매 크레딧으로 환산해 보여줍니다. `report-limit`은 이제 Codex 한도 창도 보고합니다. `setup-statusline`은 아직 Claude Code 전용입니다.
 
 ---
 
@@ -274,7 +274,7 @@ Max Plan 사용자는 요금 한도에 걸리고 나서 왜인지 궁금해합�
 
 Anthropic은 5시간 윈도우의 정확한 공식을 공개하지 않습니다. 같이 알아봅시다.
 
-`/report-limit`을 실행하세요 — 요금 한도에 걸릴 필요 없습니다. 최근 7일간의 5시간 단위 창을 전부 미리 채워진 GitHub Discussion으로 만들어 보여줍니다. 확인하고 제출하세요. `/report-limit blocked`는 실제로 한도에 걸렸던 창만 보냅니다. 데이터가 쌓일수록 공식이 또렷해집니다.
+`/report-limit`을 실행하세요 — 요금 한도에 걸릴 필요 없습니다. 최근 7일간의 5시간 단위 창을 전부 미리 채워진 GitHub Discussion으로 만들어 보여줍니다. 확인하고 제출하세요. `/report-limit blocked`는 실제로 한도에 걸렸던 창만 보냅니다. 데이터가 쌓일수록 공식이 또렷해집니다. 로그인한 계정이 둘 이상이면 한 번의 제보에 모든 계정을 계정별로 나눠 담습니다. 계정마다 5시간 창을 따로 계산하고, 현재 로그인 계정을 Account 1, 나머지를 Account 2, … 로 표시합니다.
 
 ---
 

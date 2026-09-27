@@ -159,7 +159,7 @@ Codex כותב את הסשנים שלו ל-`~/.codex/sessions/`; Claude Code כ�
 
 שני פרטים שמפרידים בין רשימה נכונה לרשימה שנראית נכונה אבל טועה: ה-`session_id` של Codex הוא מזהה ה-**thread**, שsub-agent שהופעל יורש, ולכן סשנים ממופתחים לפי `payload.id` ו-rollouts של sub-agent מסוננים באותה שיטה שבה כבר מסוננים transcripts של subtask ב-Claude Code. ו-`<codex_internal_context source="goal">` מוזרק אוטומטית על ידי המערכת, כך שהוא נשמר בcontext המשוחזר אך לעולם לא נספר כתור שהקלדת.
 
-התוסף מותקן גם בתוך Codex — ראו **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit` ו-`setup-statusline` נשארים כרגע בלעדיים ל-Claude Code.
+התוסף מותקן גם בתוך Codex — ראו **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` נשאר כרגע בלעדי ל-Claude Code. `report-limit` מדווח כעת גם על חלונות המגבלה של Codex; `setup-statusline` נשאר בלעדי ל-Claude Code.
 
 ---
 
@@ -270,7 +270,7 @@ Codex כותב את הסשנים שלו ל-`~/.codex/sessions/`; Claude Code כ�
 
 Anthropic לא מפרסמת את הנוסחה המדויקת לחלון 5 השעות. בואו נפענח אותה ביחד.
 
-הרץ את `/report-limit` — אין צורך במגבלת קצב. הוא שולח כל חלון של 5 שעות מ-7 הימים האחרונים שלך כ-GitHub Discussion ממולא מראש; בדוק ושלח. `/report-limit blocked` שולח רק את החלונות שבהם הגעת למגבלה. ככל שנאסוף יותר נתונים, כך הנוסחה תתבהר יותר.
+הרץ את `/report-limit` — אין צורך במגבלת קצב. הוא שולח כל חלון של 5 שעות מ-7 הימים האחרונים שלך כ-GitHub Discussion ממולא מראש; בדוק ושלח. `/report-limit blocked` שולח רק את החלונות שבהם הגעת למגבלה. ככל שנאסוף יותר נתונים, כך הנוסחה תתבהר יותר. אם רשומים שני חשבונות או יותר, דוח אחד מכסה כל חשבון בנפרד — כל אחד עם חלונות 5 השעות שלו — ומכנה אותם Account 1 (החשבון המחובר כרגע), Account 2, וכן הלאה.
 
 ---
 

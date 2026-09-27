@@ -162,7 +162,7 @@ Dois detalhes fazem a diferença entre uma lista correta e uma errada que só pa
 
 O plugin também se instala no Codex — veja **[README-CODEX.md](./README-CODEX.md)**
 ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)).
-`usage-view`, `report-limit` e `setup-statusline` continuam exclusivos do Claude Code por enquanto.
+`usage-view` continua exclusivo do Claude Code por enquanto. `report-limit` agora também reporta as janelas de limite do Codex; `setup-statusline` continua exclusivo do Claude Code.
 
 ---
 
@@ -273,7 +273,7 @@ Passe o mouse sobre qualquer ponto para ver o texto real do prompt, a contagem d
 
 A Anthropic não publica a fórmula exata para a janela de 5 horas. Vamos descobrir juntos.
 
-Execute `/report-limit` — não é preciso atingir um limite de taxa. Ele envia cada janela de 5 horas dos seus últimos 7 dias como uma GitHub Discussion pré-preenchida; revise e envie. `/report-limit blocked` envia apenas as janelas em que você atingiu o limite. Quanto mais dados coletarmos, mais clara a fórmula fica.
+Execute `/report-limit` — não é preciso atingir um limite de taxa. Ele envia cada janela de 5 horas dos seus últimos 7 dias como uma GitHub Discussion pré-preenchida; revise e envie. `/report-limit blocked` envia apenas as janelas em que você atingiu o limite. Quanto mais dados coletarmos, mais clara a fórmula fica. Com dois ou mais logins registrados, um único relatório cobre cada conta separadamente — cada uma com suas próprias janelas de 5 horas — e as nomeia Account 1 (o login atual), Account 2, e assim por diante.
 
 ---
 

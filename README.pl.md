@@ -168,7 +168,7 @@ Dwa szczegóły decydują o różnicy między poprawną listą a błędną, cho�
 
 Wtyczka instaluje się też w Codex — zobacz **[README-CODEX.md](./README-CODEX.md)**
 ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)).
-`usage-view`, `report-limit` i `setup-statusline` na razie pozostają wyłącznie dla Claude Code.
+`usage-view` na razie pozostaje wyłącznie dla Claude Code. `report-limit` zgłasza teraz także okna limitu Codex; `setup-statusline` pozostaje wyłącznie dla Claude Code.
 
 ---
 
@@ -279,7 +279,7 @@ Najedź na dowolną kropkę, aby zobaczyć rzeczywisty tekst promptu, liczbę to
 
 Anthropic nie publikuje dokładnej formuły okna 5-godzinnego. Ustalmy to razem.
 
-Uruchom `/report-limit` — nie musisz osiągać limitu szybkości. Wysyła każde 5-godzinne okno z ostatnich 7 dni jako wstępnie wypełnioną dyskusję GitHub; przejrzyj i prześlij. `/report-limit blocked` wysyła tylko okna, w których osiągnąłeś limit. Im więcej danych zbierzemy, tym wyraźniejsza stanie się formuła.
+Uruchom `/report-limit` — nie musisz osiągać limitu szybkości. Wysyła każde 5-godzinne okno z ostatnich 7 dni jako wstępnie wypełnioną dyskusję GitHub; przejrzyj i prześlij. `/report-limit blocked` wysyła tylko okna, w których osiągnąłeś limit. Im więcej danych zbierzemy, tym wyraźniejsza stanie się formuła. Jeśli zarejestrowane są dwa lub więcej logowań, jeden raport obejmuje każde konto osobno — każde z własnymi 5-godzinnymi oknami — i nazywa je Account 1 (obecne logowanie), Account 2 i tak dalej.
 
 ---
 

@@ -15,6 +15,7 @@ Codex はすべてのセッションを `~/.codex/sessions/` に書き出す。C
 | `s-continue` | 以前の Claude Code **または** Codex セッションを復元する——一覧から選ぶか、直近のものへ直接飛ぶ。 |
 | `s-compact` | クリアする前に引き継ぎを書く——転写には残らないもの:サブエージェントの発見、ツール出力の数値、捨てたアプローチ。 |
 | `usage-view` | Codex の使用量がどこへ消えたかを見る——rollout から作る AI 分析付きのインタラクティブ HTML ダッシュボード。 |
+| `report-limit` | Codex のレート制限データを共有する——Codex が報告する各レート制限ウィンドウを、その中で使ったトークンと組み合わせて、あらかじめ入力済みの GitHub Discussion として送る。 |
 
 引き継ぎファイルはツール単位ではなくプロジェクト単位で保存される。Codex でスプリントを終え、Claude Code で続きをやっても、そのファイルはすでにそこにある。逆方向に戻っても同じだ。両ツールの履歴をまとめて復元できるプラグインはこれだけなので、片方の予算が尽きたらもう片方で同じ行から続けられる。
 
@@ -53,6 +54,8 @@ codex plugin marketplace upgrade ww-w-ai
 /s-compact            次の人のための引き継ぎを書く
 /usage-view           直近1か月分の使用状況ダッシュボード
 /usage-view last 7 days
+/report-limit          直近7日分のレート制限ウィンドウを報告する
+/report-limit blocked  100%に達したウィンドウだけを送る
 ```
 
 ## 使用状況ダッシュボード
@@ -80,7 +83,7 @@ codex plugin marketplace upgrade ww-w-ai
 
 ## 対応しないこと
 
-`report-limit` は今のところ Claude Code 専用である。Codex もロールアウトにレート制限をそのまま記録しているため、これは移植がまだ済んでいないだけで、できないわけではない。`setup-statusline` は事情が異なる。Codex には独自のステータスラインがあり、`config.toml` の `status_line` で設定する。
+`setup-statusline` は今も Claude Code 専用である。Codex には独自のステータスラインがあり、`config.toml` の `status_line` で設定する。
 
 ## ライセンス
 

@@ -6,9 +6,9 @@
  * belongs to the last change in S at or before t; with none, to the last change in
  * any session at or before t (`claude -p` and SDK sessions record none).
  *
- * Filtering applies only when two or more accounts were seen. With one account (or
- * none recorded), every row is kept. Rows with no record at or before them are
- * always kept.
+ * Reports split by account only when two or more accounts were seen (`filtering`).
+ * With one account (or none recorded), every row is that account's. Rows with no
+ * record at or before them count as the current login's.
  */
 
 const crypto = require('crypto');
@@ -65,14 +65,22 @@ function accountAt(index, sessionId, tsSec) {
 }
 
 /**
- * Keep a row unless it is known to belong to another account. A row with no record
- * at or before it (caches older than account tracking) is kept: its account is
- * unknown, not different.
+ * The account a row is counted under. A row with no record at or before it (caches
+ * older than account tracking) counts as the current login: its account is unknown,
+ * not different.
+ * @returns {string|null} account hash; null only when no account was ever recorded
  */
-function isCurrentAccount(index, sessionId, tsSec) {
-  if (!index.filtering) return true;
-  const account = accountAt(index, sessionId, tsSec);
-  return account === null || account === index.current;
+function accountOf(index, sessionId, tsSec) {
+  return accountAt(index, sessionId, tsSec) || index.current;
 }
 
-module.exports = { accountHash, loadAccountIndex, accountAt, isCurrentAccount };
+/**
+ * @returns {string[]} every recorded account, most recently seen first (the current login leads)
+ */
+function listAccounts(index) {
+  const seen = new Set();
+  for (let i = index.all.length - 1; i >= 0; i--) seen.add(index.all[i].account);
+  return [...seen];
+}
+
+module.exports = { accountHash, loadAccountIndex, accountAt, accountOf, listAccounts };

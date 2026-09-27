@@ -163,7 +163,7 @@ It's fast, too. A Codex rollout isn't run through a second parser. It's rewritte
 
 Two details separate a correct list from a plausible-looking wrong one. First, Codex's `session_id` is the **thread** id, and a spawned subagent inherits it, so sessions are keyed on `payload.id` and subagent rollouts are filtered out the same way Claude Code's subtask transcripts already are. Second, `<codex_internal_context source="goal">` is machine-injected, so it stays in the restored context but is never counted as a turn you typed.
 
-The plugin installs into Codex as well. See **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` reads Codex sessions too and reports their cost as a purchased-credit equivalent. `report-limit` and `setup-statusline` are still Claude Code only.
+The plugin installs into Codex as well. See **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` reads Codex sessions too and reports their cost as a purchased-credit equivalent. `report-limit` reports Codex limit windows too; `setup-statusline` is still Claude Code only.
 
 ---
 
@@ -274,7 +274,7 @@ Hover any dot for the actual prompt text, the token count, and the full cost bre
 
 Anthropic doesn't publish the exact formula for the 5-hour window. Let's work it out together.
 
-Run `/report-limit` — no rate limit needed. It sends every 5-hour window of your last 7 days as a pre-filled GitHub Discussion; review it and submit. `/report-limit blocked` sends only the windows where you hit the limit. The more data we collect, the clearer the formula gets.
+Run `/report-limit` — no rate limit needed. It sends every 5-hour window of your last 7 days as a pre-filled GitHub Discussion; review it and submit. `/report-limit blocked` sends only the windows where you hit the limit. The more data we collect, the clearer the formula gets. With two or more logins on record, one report covers every account, split by account — each with its own 5-hour windows — and names them Account 1 (the current login), Account 2, and so on.
 
 ---
 

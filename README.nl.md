@@ -169,7 +169,7 @@ Twee details maken het verschil tussen een correcte lijst en een aannemelijk oge
 
 De plugin installeert zich ook in Codex — zie **[README-CODEX.md](./README-CODEX.md)**
 ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)).
-`usage-view`, `report-limit` en `setup-statusline` blijven voorlopig exclusief voor Claude Code.
+`usage-view` blijft voorlopig exclusief voor Claude Code. `report-limit` meldt nu ook Codex-limietvensters; `setup-statusline` blijft exclusief voor Claude Code.
 
 ---
 
@@ -280,7 +280,7 @@ Beweeg de muis over een stip om de werkelijke prompttekst, het aantal tokens en 
 
 Anthropic publiceert de exacte formule voor het 5-uursvenster niet. Laten we het samen uitzoeken.
 
-Voer `/report-limit` uit — geen snelheidslimiet nodig. Het stuurt elk 5-uursvenster van je afgelopen 7 dagen als een vooraf ingevulde GitHub Discussion; controleer en dien in. `/report-limit blocked` stuurt alleen de vensters waarin je de limiet bereikte. Hoe meer data we verzamelen, hoe duidelijker de formule wordt.
+Voer `/report-limit` uit — geen snelheidslimiet nodig. Het stuurt elk 5-uursvenster van je afgelopen 7 dagen als een vooraf ingevulde GitHub Discussion; controleer en dien in. `/report-limit blocked` stuurt alleen de vensters waarin je de limiet bereikte. Hoe meer data we verzamelen, hoe duidelijker de formule wordt. Bij twee of meer geregistreerde logins bestrijkt één rapport elk account apart — elk met zijn eigen 5-uursvensters — en noemt ze Account 1 (de huidige login), Account 2, enzovoort.
 
 ---
 

@@ -162,7 +162,7 @@ Doğru bir listeyle inandırıcı görünen yanlış bir liste arasındaki fark�
 
 Eklenti Codex'e de kuruluyor — bkz. **[README-CODEX.md](./README-CODEX.md)**
 ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)).
-`usage-view`, `report-limit` ve `setup-statusline` şimdilik yalnızca Claude Code'da.
+`usage-view` şimdilik yalnızca Claude Code'da. `report-limit` artık Codex limit pencerelerini de raporluyor; `setup-statusline` yalnızca Claude Code'da kalmaya devam ediyor.
 ---
 
 ## 📊 Özellik 3: Canlı Durum Çubuğu
@@ -272,7 +272,7 @@ Gerçek prompt metnini, token sayısını ve tam maliyet dökümünü (Input/Out
 
 Anthropic, 5 saatlik pencere için tam formülü yayımlamıyor. Birlikte çözelim.
 
-`/report-limit`'i çalıştırın — hız sınırına ulaşmanıza gerek yok. Son 7 gününüzdeki her 5 saatlik pencereyi önceden doldurulmuş bir GitHub Discussion olarak gönderir; gözden geçirip gönderin. `/report-limit blocked`, yalnızca sınıra ulaştığınız pencereleri gönderir. Ne kadar çok veri toplarsak, formül o kadar netleşir.
+`/report-limit`'i çalıştırın — hız sınırına ulaşmanıza gerek yok. Son 7 gününüzdeki her 5 saatlik pencereyi önceden doldurulmuş bir GitHub Discussion olarak gönderir; gözden geçirip gönderin. `/report-limit blocked`, yalnızca sınıra ulaştığınız pencereleri gönderir. Ne kadar çok veri toplarsak, formül o kadar netleşir. Kayıtlı iki veya daha fazla giriş varsa, tek bir rapor her hesabı ayrı ayrı kapsar — her biri kendi 5 saatlik pencereleriyle — ve bunları Account 1 (mevcut giriş), Account 2 ve böyle devam eder şekilde adlandırır.
 
 ---
 

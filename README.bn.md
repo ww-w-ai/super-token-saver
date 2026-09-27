@@ -159,7 +159,7 @@ Codex তার সেশন লেখে `~/.codex/sessions/`-এ; Claude Code 
 
 দুটো ছোট বিষয় সঠিক তালিকা আর দেখতে-ঠিক-কিন্তু-ভুল তালিকার মধ্যে পার্থক্য গড়ে দেয়: Codex-এর `session_id` আসলে **thread**-এর id, যেটা spawn হওয়া কোনো sub-agent উত্তরাধিকার সূত্রে পায়, তাই সেশনগুলো `payload.id` দিয়ে key করা হয় আর sub-agent rollout-কে সেই একই ভাবে বাদ দেওয়া হয় যেভাবে Claude Code-এর subtask transcript ইতিমধ্যে বাদ দেওয়া হয়। আর `<codex_internal_context source="goal">` machine-injected, তাই সেটা পুনরুদ্ধার করা কনটেক্সটে থাকে ঠিকই, কিন্তু আপনার টাইপ করা turn হিসেবে কখনো গোনা হয় না।
 
-এই plugin Codex-এও install হয় — দেখুন **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md))। `usage-view`, `report-limit` আর `setup-statusline` আপাতত শুধু Claude Code-এর জন্যই থাকছে।
+এই plugin Codex-এও install হয় — দেখুন **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md))। `usage-view` আপাতত শুধু Claude Code-এর জন্যই থাকছে। `report-limit` এখন Codex-এর লিমিট উইন্ডোও রিপোর্ট করে; `setup-statusline` এখনও শুধু Claude Code-এর জন্য।
 
 ---
 
@@ -270,7 +270,7 @@ Max Plan ব্যবহারকারীরা রেট লিমিট হ�
 
 Anthropic ৫-ঘণ্টা উইন্ডোর সঠিক ফর্মুলা প্রকাশ করে না। আসুন একসাথে বের করি।
 
-`/report-limit` চালান — রেট লিমিট হিট করার দরকার নেই। এটি আপনার গত ৭ দিনের প্রতিটি ৫-ঘণ্টার উইন্ডো একটি প্রি-ফিল করা GitHub Discussion হিসেবে পাঠায়; সেটি পর্যালোচনা করে জমা দিন। `/report-limit blocked` শুধু সেই উইন্ডোগুলো পাঠায় যেখানে আপনি লিমিট হিট করেছিলেন। আমরা যত বেশি ডেটা সংগ্রহ করব, ফর্মুলা তত স্পষ্ট হবে।
+`/report-limit` চালান — রেট লিমিট হিট করার দরকার নেই। এটি আপনার গত ৭ দিনের প্রতিটি ৫-ঘণ্টার উইন্ডো একটি প্রি-ফিল করা GitHub Discussion হিসেবে পাঠায়; সেটি পর্যালোচনা করে জমা দিন। `/report-limit blocked` শুধু সেই উইন্ডোগুলো পাঠায় যেখানে আপনি লিমিট হিট করেছিলেন। আমরা যত বেশি ডেটা সংগ্রহ করব, ফর্মুলা তত স্পষ্ট হবে। দুই বা তার বেশি লগইন থাকলে, একটি রিপোর্টেই প্রতিটি অ্যাকাউন্ট আলাদাভাবে কভার হয় — প্রতিটির নিজস্ব ৫-ঘণ্টার উইন্ডো সহ — এবং সেগুলোকে Account 1 (বর্তমান লগইন), Account 2, ইত্যাদি নামে দেখানো হয়।
 
 ---
 

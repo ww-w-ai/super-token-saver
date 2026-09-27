@@ -159,7 +159,7 @@ Ora `/s-continue` elenca e ripristina entrambi. Un rollout di Codex non passa pe
 
 Due dettagli separano un elenco corretto da uno solo apparentemente giusto. Il `session_id` di Codex è in realtà l'id del **thread**, ereditato da qualsiasi subagent generato, quindi le sessioni si distinguono tramite `payload.id` e i rollout dei subagent vengono filtrati nello stesso modo in cui Claude Code filtra già le proprie trascrizioni di subtask. E `<codex_internal_context source="goal">` viene iniettato dalla macchina, quindi resta nel contesto ripristinato ma non viene mai contato come un turno digitato da te.
 
-Il plugin si installa anche in Codex — vedi **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit` e `setup-statusline` restano per ora esclusivi di Claude Code.
+Il plugin si installa anche in Codex — vedi **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` resta per ora esclusivo di Claude Code. `report-limit` ora segnala anche le finestre di limite di Codex; `setup-statusline` resta esclusivo di Claude Code.
 
 ---
 
@@ -270,7 +270,7 @@ Passa il mouse su qualsiasi punto per vedere il testo effettivo del prompt, il c
 
 Anthropic non pubblica la formula esatta per la finestra di 5 ore. Scopriamola insieme.
 
-Esegui `/report-limit` — non serve raggiungere un limite di frequenza. Invia ogni finestra di 5 ore degli ultimi 7 giorni come discussione GitHub precompilata; controllala e invia. `/report-limit blocked` invia solo le finestre in cui hai raggiunto il limite. Più dati raccogliamo, più chiara diventa la formula.
+Esegui `/report-limit` — non serve raggiungere un limite di frequenza. Invia ogni finestra di 5 ore degli ultimi 7 giorni come discussione GitHub precompilata; controllala e invia. `/report-limit blocked` invia solo le finestre in cui hai raggiunto il limite. Più dati raccogliamo, più chiara diventa la formula. Con due o più account registrati, un unico report copre ogni account separatamente — ciascuno con le proprie finestre di 5 ore — e li chiama Account 1 (l'account attualmente collegato), Account 2, e così via.
 
 ---
 

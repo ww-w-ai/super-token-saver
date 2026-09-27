@@ -158,7 +158,7 @@ Codex 把会话写到 `~/.codex/sessions/`，Claude Code 写到 `~/.claude/proje
 
 能不能列对，靠的就是这两个细节。Codex 的 `session_id` 其实是子代理也会继承的 **线程** id，所以恢复靠 `payload.id` 来区分会话，子代理的 rollout 会被过滤掉——用的是 Claude Code 过滤子任务 transcript 的同一套方法。而 `<codex_internal_context source="goal">` 是系统自动注入的，恢复时会保留在上下文里，但不会被算作你输入的一轮对话。
 
-这个插件也会安装进 Codex——参见 **[README-CODEX.md](./README-CODEX.md)**（[한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)）。`usage-view`、`report-limit` 和 `setup-statusline` 目前仍然只支持 Claude Code。
+这个插件也会安装进 Codex——参见 **[README-CODEX.md](./README-CODEX.md)**（[한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)）。`usage-view` 目前仍然只支持 Claude Code。`report-limit` 现在也会报告 Codex 的限额窗口；`setup-statusline` 仍然只支持 Claude Code。
 
 ---
 
@@ -269,7 +269,7 @@ Max Plan 用户触发速率限制后一脸茫然。API 用户打开 Anthropic �
 
 Anthropic 没有公布 5 小时窗口的精确计算公式。让我们一起搞清楚。
 
-运行 `/report-limit`——不需要先触发速率限制。它会把你过去 7 天里每个 5 小时窗口整理成预填好的 GitHub Discussion；检查后提交即可。`/report-limit blocked` 只发送你实际触发限制的那些窗口。收集的数据越多，公式就越清晰。
+运行 `/report-limit`——不需要先触发速率限制。它会把你过去 7 天里每个 5 小时窗口整理成预填好的 GitHub Discussion；检查后提交即可。`/report-limit blocked` 只发送你实际触发限制的那些窗口。收集的数据越多，公式就越清晰。如果记录中有两个或以上的登录账号，一份报告会按账号分别覆盖每个账号——各自拥有独立的 5 小时窗口——并将它们命名为 Account 1（当前登录账号）、Account 2，以此类推。
 
 ---
 

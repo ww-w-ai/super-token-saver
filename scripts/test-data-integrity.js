@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentTimelinePath, getSummaryPath } = require('./lib/cache-paths');
-const { loadAccountIndex, accountAt } = require('./lib/accounts');
+const { loadAccountIndex, accountOf } = require('./lib/accounts');
 const { buildGlobalTsMapper, FIVE_HOURS_S } = require('./lib/window-utils');
 const { dropReplayedRequests } = require('./lib/request-dedup');
 
@@ -82,7 +82,7 @@ function loadAllRows() {
   }
   const index = loadAccountIndex(entries);
   const kept = [...bySession.values()].flat();
-  for (const r of kept) r.account = accountAt(index, r.sessionId.split('@')[0], r.ts) || index.current;
+  for (const r of kept) r.account = accountOf(index, r.sessionId.split('@')[0], r.ts);
   return { rows: kept, index };
 }
 
@@ -122,7 +122,7 @@ if (REPORT.summary && REPORT.summary.dateFrom) {
 }
 // Same rule as the report: window boundaries come from this account's ratelimit rows only.
 const { tsToWindow } = buildGlobalTsMapper(SOURCE.index.filtering
-  ? (sid, ts) => (accountAt(SOURCE.index, sid, ts) || SOURCE.index.current) === account
+  ? (sid, ts) => accountOf(SOURCE.index, sid, ts) === account
   : undefined);
 
 // Apply same fallback grouping logic as build-report.js

@@ -158,7 +158,7 @@ Codex ghi các phiên của nó vào `~/.codex/sessions/`; Claude Code ghi vào 
 
 Hai chi tiết tạo nên khác biệt giữa một danh sách đúng và một danh sách trông có vẻ đúng nhưng lại sai: `session_id` của Codex thực chất là id của **thread**, thứ mà một subagent được tạo ra sẽ kế thừa, nên các phiên được đánh khóa theo `payload.id` và rollout của subagent bị lọc bỏ theo đúng cách mà transcript của subtask trong Claude Code đã bị lọc bỏ từ trước. Còn `<codex_internal_context source="goal">` được hệ thống tự động chèn vào, nên nó vẫn được giữ lại trong ngữ cảnh khôi phục nhưng không bao giờ được tính là một turn do bạn gõ ra.
 
-Plugin này cũng được cài đặt vào Codex — xem **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit` và `setup-statusline` hiện tại vẫn chỉ dành riêng cho Claude Code.
+Plugin này cũng được cài đặt vào Codex — xem **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` hiện tại vẫn chỉ dành riêng cho Claude Code. `report-limit` giờ đây cũng báo cáo các cửa sổ giới hạn của Codex; `setup-statusline` vẫn chỉ dành riêng cho Claude Code.
 
 ---
 
@@ -269,7 +269,7 @@ Di chuột vào bất kỳ chấm nào để xem văn bản prompt thực tế, 
 
 Anthropic không công bố công thức chính xác cho cửa sổ 5 giờ. Hãy cùng tìm hiểu.
 
-Chạy `/report-limit` — không cần phải bị giới hạn tốc độ trước. Nó gửi mọi khung giờ 5 tiếng trong 7 ngày gần nhất của bạn dưới dạng một GitHub Discussion đã điền sẵn; xem lại rồi gửi. `/report-limit blocked` chỉ gửi những khung giờ mà bạn đã bị giới hạn. Càng nhiều dữ liệu chúng ta thu thập, công thức càng rõ ràng hơn.
+Chạy `/report-limit` — không cần phải bị giới hạn tốc độ trước. Nó gửi mọi khung giờ 5 tiếng trong 7 ngày gần nhất của bạn dưới dạng một GitHub Discussion đã điền sẵn; xem lại rồi gửi. `/report-limit blocked` chỉ gửi những khung giờ mà bạn đã bị giới hạn. Càng nhiều dữ liệu chúng ta thu thập, công thức càng rõ ràng hơn. Nếu có từ hai lượt đăng nhập trở lên được ghi nhận, một báo cáo sẽ bao gồm từng tài khoản riêng biệt — mỗi tài khoản có khung giờ 5 tiếng riêng — và đặt tên chúng là Account 1 (tài khoản đang đăng nhập), Account 2, v.v.
 
 ---
 

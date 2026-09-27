@@ -159,7 +159,7 @@ Codex guarda sus sesiones en `~/.codex/sessions/`; Claude Code, en `~/.claude/pr
 
 Dos detalles marcan la diferencia entre una lista correcta y otra que solo parece serlo. El `session_id` de Codex es en realidad el id del **hilo**, que hereda cualquier subagente que se lance, así que las sesiones se identifican por `payload.id` y los rollouts de subagentes se filtran igual que Claude Code ya filtra sus propias transcripciones de subtareas. Y `<codex_internal_context source="goal">` lo inyecta la máquina, así que se conserva en el contexto restaurado pero nunca cuenta como un turno que escribiste tú.
 
-El plugin también se instala en Codex — mira **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit` y `setup-statusline` siguen siendo exclusivos de Claude Code por ahora.
+El plugin también se instala en Codex — mira **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` sigue siendo exclusivo de Claude Code por ahora. `report-limit` ahora también reporta las ventanas de límite de Codex; `setup-statusline` sigue siendo exclusivo de Claude Code.
 
 ---
 
@@ -270,7 +270,7 @@ Pasa el cursor sobre cualquier punto para ver el texto real del prompt, el recue
 
 Anthropic no publica la fórmula exacta para la ventana de 5 horas. Vamos a descubrirla juntos.
 
-Ejecuta `/report-limit` — no necesitas alcanzar un límite de velocidad. Envía cada ventana de 5 horas de tus últimos 7 días como un GitHub Discussion prellenado; revísalo y envíalo. `/report-limit blocked` envía solo las ventanas en las que alcanzaste el límite. Cuantos más datos recopilemos, más clara será la fórmula.
+Ejecuta `/report-limit` — no necesitas alcanzar un límite de velocidad. Envía cada ventana de 5 horas de tus últimos 7 días como un GitHub Discussion prellenado; revísalo y envíalo. `/report-limit blocked` envía solo las ventanas en las que alcanzaste el límite. Cuantos más datos recopilemos, más clara será la fórmula. Si hay dos o más inicios de sesión registrados, un solo informe cubre cada cuenta por separado —cada una con sus propias ventanas de 5 horas— y las nombra Account 1 (el inicio de sesión actual), Account 2, y así sucesivamente.
 
 ---
 

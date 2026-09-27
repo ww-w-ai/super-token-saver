@@ -168,7 +168,7 @@ Två detaljer avgör skillnaden mellan en korrekt lista och en som bara ser rät
 
 Pluginet installeras även i Codex — se **[README-CODEX.md](./README-CODEX.md)**
 ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)).
-`usage-view`, `report-limit` och `setup-statusline` är tills vidare bara för Claude Code.
+`usage-view` är tills vidare bara för Claude Code. `report-limit` rapporterar nu även Codex gränsfönster; `setup-statusline` är fortfarande bara för Claude Code.
 
 ---
 
@@ -279,7 +279,7 @@ Hovra över en punkt för att se den faktiska prompttexten, tokenantal och fulls
 
 Anthropic publicerar inte den exakta formeln för 5-timmarsfönstret. Låt oss ta reda på det tillsammans.
 
-Kör `/report-limit` — ingen hastighetsgräns krävs. Den skickar varje 5-timmarsfönster från dina senaste 7 dagar som en förifylld GitHub Discussion; granska och skicka in. `/report-limit blocked` skickar bara fönstren där du nådde gränsen. Ju mer data vi samlar in, desto tydligare blir formeln.
+Kör `/report-limit` — ingen hastighetsgräns krävs. Den skickar varje 5-timmarsfönster från dina senaste 7 dagar som en förifylld GitHub Discussion; granska och skicka in. `/report-limit blocked` skickar bara fönstren där du nådde gränsen. Ju mer data vi samlar in, desto tydligare blir formeln. Med två eller fler inloggningar registrerade täcker en rapport varje konto separat — vart och ett med sina egna 5-timmarsfönster — och namnger dem Account 1 (den aktuella inloggningen), Account 2, och så vidare.
 
 ---
 

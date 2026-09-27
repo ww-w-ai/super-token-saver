@@ -159,7 +159,7 @@ Codex menulis sesinya ke `~/.codex/sessions/`; Claude Code menulis ke `~/.claude
 
 Dua detail inilah yang membedakan daftar yang benar dari daftar yang tampak benar tapi salah: `session_id` milik Codex sebenarnya adalah id **thread**, yang diwarisi oleh sub-agent mana pun yang di-spawn, sehingga sesi dikunci berdasarkan `payload.id` dan rollout sub-agent disaring dengan cara yang sama seperti transkrip subtask Claude Code sudah disaring. Sementara `<codex_internal_context source="goal">` disisipkan otomatis oleh sistem, sehingga tetap ada di konteks yang dipulihkan tapi tidak pernah dihitung sebagai turn yang Anda ketik.
 
-Plugin ini juga terpasang di dalam Codex — lihat **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view`, `report-limit`, dan `setup-statusline` untuk saat ini masih khusus Claude Code.
+Plugin ini juga terpasang di dalam Codex — lihat **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md)). `usage-view` untuk saat ini masih khusus Claude Code. `report-limit` kini juga melaporkan limit window Codex; `setup-statusline` masih khusus Claude Code.
 
 ---
 
@@ -270,7 +270,7 @@ Arahkan kursor ke titik manapun untuk melihat teks prompt sebenarnya, jumlah tok
 
 Anthropic tidak mempublikasikan formula tepat untuk jendela 5 jam. Mari kita cari tahu bersama.
 
-Jalankan `/report-limit` — tidak perlu mencapai batas rate. Ini mengirim setiap jendela 5 jam dari 7 hari terakhir Anda sebagai GitHub Discussion yang sudah terisi otomatis; tinjau lalu kirim. `/report-limit blocked` hanya mengirim jendela di mana Anda mencapai batas. Semakin banyak data yang kami kumpulkan, semakin jelas formulanya.
+Jalankan `/report-limit` — tidak perlu mencapai batas rate. Ini mengirim setiap jendela 5 jam dari 7 hari terakhir Anda sebagai GitHub Discussion yang sudah terisi otomatis; tinjau lalu kirim. `/report-limit blocked` hanya mengirim jendela di mana Anda mencapai batas. Semakin banyak data yang kami kumpulkan, semakin jelas formulanya. Jika ada dua login atau lebih yang tercatat, satu laporan mencakup setiap akun secara terpisah — masing-masing dengan jendela 5 jamnya sendiri — dan menamainya Account 1 (login saat ini), Account 2, dan seterusnya.
 
 ---
 

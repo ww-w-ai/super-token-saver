@@ -159,7 +159,7 @@ Codex अपने sessions `~/.codex/sessions/` में लिखता ह�
 
 दो details ही सही list और सही-दिखने-वाली-पर-गलत list के बीच फर्क बनाते हैं: Codex का `session_id` असल में **thread** id है, जिसे spawn किया गया कोई sub-agent inherit करता है, इसलिए sessions को `payload.id` पर key किया जाता है और sub-agent rollouts को उसी तरह filter किया जाता है जैसे Claude Code के subtask transcripts पहले से किए जाते हैं। और `<codex_internal_context source="goal">` machine-injected होता है, इसलिए यह restored context में तो रहता है पर कभी भी आपके टाइप किए turn के रूप में count नहीं होता।
 
-यह plugin Codex में भी install होता है — देखें **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md))। `usage-view`, `report-limit` और `setup-statusline` फिलहाल सिर्फ Claude Code तक सीमित हैं।
+यह plugin Codex में भी install होता है — देखें **[README-CODEX.md](./README-CODEX.md)** ([한국어](./README-CODEX.ko.md) · [日本語](./README-CODEX.ja.md) · [简体中文](./README-CODEX.zh-Hans.md))। `usage-view` फिलहाल सिर्फ Claude Code तक सीमित है। `report-limit` अब Codex के लिमिट विंडो भी रिपोर्ट करता है; `setup-statusline` अब भी सिर्फ Claude Code तक सीमित है।
 
 ---
 
@@ -270,7 +270,7 @@ Max Plan users rate limit पर hit होते हैं और wonder कर
 
 Anthropic 5-hour window का exact formula publish नहीं करता। आइए मिलकर पता लगाएं।
 
-`/report-limit` run करें — rate limit hit करने की ज़रूरत नहीं। यह आपके पिछले 7 दिनों की हर 5-घंटे की window को एक pre-filled GitHub Discussion के रूप में भेजता है; उसे review करके submit करें। `/report-limit blocked` सिर्फ वो windows भेजता है जहाँ आपने limit hit किया था। जितना ज़्यादा data हम collect करेंगे, formula उतना ज़्यादा clear होगा।
+`/report-limit` run करें — rate limit hit करने की ज़रूरत नहीं। यह आपके पिछले 7 दिनों की हर 5-घंटे की window को एक pre-filled GitHub Discussion के रूप में भेजता है; उसे review करके submit करें। `/report-limit blocked` सिर्फ वो windows भेजता है जहाँ आपने limit hit किया था। जितना ज़्यादा data हम collect करेंगे, formula उतना ज़्यादा clear होगा। अगर दो या ज़्यादा login दर्ज हैं, तो एक ही report में हर account अलग-अलग कवर होता है — हर एक की अपनी 5-घंटे की windows के साथ — और उन्हें Account 1 (मौजूदा login), Account 2, वगैरह नाम दिए जाते हैं।
 
 ---
 

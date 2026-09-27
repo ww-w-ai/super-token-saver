@@ -15,6 +15,7 @@ Codex 는 모든 세션을 `~/.codex/sessions/` 에 기록한다. Claude Code �
 | `s-continue` | 이전 Claude Code **또는** Codex 세션을 복원한다 — 목록에서 고르거나, 바로 마지막 세션으로 간다. |
 | `s-compact` | 클리어하기 전에 인계 기록을 남긴다 — 전사에는 남지 않는 것들: 서브에이전트가 찾아낸 것, 도구 출력의 수치, 폐기한 접근법. |
 | `usage-view` | Codex 사용량이 어디로 갔는지 본다 — rollout에서 만든, AI 분석이 담긴 인터랙티브 HTML 대시보드. |
+| `report-limit` | Codex 사용 한도 데이터를 공유한다 — Codex가 보고하는 한도 창마다 그 안에서 쓴 토큰과 짝지어, 미리 채워진 GitHub Discussion으로 보낸다. |
 
 인계 기록은 도구별이 아니라 프로젝트별로 저장된다. Codex 에서 스프린트를 마치고 Claude Code 에서 이어받아도, 그 파일은 이미 거기 있다. 반대로 돌아와도 마찬가지다. 두 도구의 기록을 함께 복원하는 플러그인은 이것뿐이라, 한쪽 예산이 바닥나면 다른 쪽에서 그 자리부터 이어 가면 된다.
 
@@ -53,6 +54,8 @@ codex plugin marketplace upgrade ww-w-ai
 /s-compact            다음 사람을 위한 인계 기록을 남긴다
 /usage-view           지난 한 달 사용량 대시보드
 /usage-view last 7 days
+/report-limit          최근 7일간의 한도 창을 제보한다
+/report-limit blocked  100%에 도달한 창만 보낸다
 ```
 
 ## 사용량 대시보드
@@ -80,7 +83,7 @@ codex plugin marketplace upgrade ww-w-ai
 
 ## 이 플러그인이 하지 않는 것
 
-`report-limit` 은 아직 Claude Code 전용이다 — Codex 도 롤아웃에 요율 한도를 그대로 남기므로, 못 하는 것이 아니라 아직 포팅하지 않은 것이다. `setup-statusline` 은 사정이 다르다. Codex 에는 이미 자체 상태줄이 있고 `config.toml` 의 `status_line` 으로 설정한다.
+`setup-statusline` 은 여전히 Claude Code 전용이다 — Codex 에는 이미 자체 상태줄이 있고 `config.toml` 의 `status_line` 으로 설정한다.
 
 ## 라이선스
 
