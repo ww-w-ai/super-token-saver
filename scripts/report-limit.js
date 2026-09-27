@@ -283,7 +283,7 @@ function buildAccountSection(account) {
     ? loadAccountRows(keep, -Infinity, Infinity)
     : loadAccountRows(keep, range.start - FIVE_HOURS_S, range.end);
   // An early reset ends the window where the next one starts (splitOverlaps): merged, one 5h
-  // label held 9.5 h of requests. /usage-view still merges.
+  // label held 9.5 h of requests. /usage-view splits the same way.
   const mapper = buildGlobalTsMapper(account === null ? undefined : keep, { splitOverlaps: true });
   assignWindows(rows, mapper.tsToWindow);
   const endOf = new Map(mapper.windows.map(w => [w.start, w.end]));

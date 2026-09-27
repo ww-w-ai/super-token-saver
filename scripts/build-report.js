@@ -60,6 +60,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { buildGlobalTsMapper, assignWindows, FIVE_HOURS_S } = require('./lib/window-utils');
+const { groupSamplesIntoWindows, hasStarted, withTsSec } = require('./lib/codex-limit-windows');
 const { forHost, migrateFromYYMM, extractProjectName, subagentIdFromPath, projectNameFromCwd, CACHE_BASE: CACHE_DIR } = require('./lib/cache-paths');
 const { PLAN_INFO: PLAN_INFO_ALL, CODEX_PLAN_INFO, resolveCodexPlanChoice } = require('./lib/plan-info');
 const { round2 } = require('./lib/format');
@@ -1578,6 +1579,10 @@ await ensureCompactCaches(allSessionIds);
 // Pre-4/23 hour-aligned data is handled by the same algorithm naturally
 // because :00 boundaries are still valid ts values.
 
+// A window's end. A limit reset early (a reset coupon) starts the next window before five hours
+// pass; that window then ends where the next one starts.
+let windowEndOf = (start) => start + WINDOW_SECONDS;
+
 if (isCodex) {
   const canonical = raw.canonicalRateLimits || {};
   const lane = calendarWindowSource === 'canonical_rate_limit'
@@ -1585,20 +1590,41 @@ if (isCodex) {
     : null;
   const duration = lane ? Number(lane.windowMinutes) * 60 : WINDOW_SECONDS;
   const anchor = lane ? Number(lane.resetsAt) - duration : null;
+  // The lane's windows as Codex recorded them. A reset coupon starts one early, so tiling back
+  // from the latest reset would shift every window before it.
+  const laneKey = lane === canonical.primary ? 'primary' : 'secondary';
+  const recorded = lane
+    ? groupSamplesIntoWindows(withTsSec(raw.rateLimitSamples).filter(s => s.limitId === 'codex'
+        && s.lane === laneKey && Number(s.windowMinutes) === calendarWindowMinutes)).filter(hasStarted)
+    : [];
+  const recordedStart = (ts) => {
+    let lo = 0, hi = recorded.length - 1, found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (recorded[mid].start <= ts) { found = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return found >= 0 && ts < recorded[found].activeEnd ? recorded[found].start : null;
+  };
+  const endOf = new Map(recorded.map(w => [w.start, w.activeEnd]));
+  windowEndOf = (start) => endOf.get(start) || start + WINDOW_SECONDS;
   for (const [, rows] of allTimelines) {
     for (const row of rows) {
       const ts = typeof row.ts === 'number' ? row.ts : Math.floor(new Date(row.ts).getTime() / 1000);
       row.ts = ts;
-      if (anchor !== null) row.win = anchor + Math.floor((ts - anchor) / duration) * duration;
+      const win = recordedStart(ts);
+      if (win !== null) row.win = win;
+      else if (anchor !== null) row.win = anchor + Math.floor((ts - anchor) / duration) * duration;
       else row.win = Math.floor(ts / WINDOW_SECONDS) * WINDOW_SECONDS;
     }
   }
 } else {
   // Window boundaries come from this report's account only; another account's resets would
   // merge overlapping windows into one span longer than five hours.
-  const { tsToWindow } = buildGlobalTsMapper(accountIndex.filtering
+  const { tsToWindow, windows: rlWindows } = buildGlobalTsMapper(accountIndex.filtering
     ? (sid, ts) => accountOf(accountIndex, sid, ts) === reportAccount
-    : undefined);
+    : undefined, { splitOverlaps: true });
+  const endOf = new Map(rlWindows.map(w => [w.start, w.end]));
+  windowEndOf = (start) => endOf.get(start) || start + WINDOW_SECONDS;
   const allRows = [];
   for (const [, rows] of allTimelines) {
     for (const row of rows) {
@@ -1632,7 +1658,7 @@ const codexWeeklyBlockedSamples = isCodex && canonicalScopeLane
   : [];
 for (const winStart of winStarts) {
   const entries = winRowsMap.get(winStart);
-  const winEnd = winStart + WINDOW_SECONDS;
+  const winEnd = windowEndOf(winStart);
   const winDate = new Date(winStart * 1000);
   const winEndDate = new Date(winEnd * 1000);
 
@@ -2173,12 +2199,12 @@ if (currentMode && windows.length > 0) {
       const scoped = windows.filter(w => w.endTs > latestWinStart && w.startTs < latestWinEnd);
       windows.length = 0; windows.push(...scoped);
     } else {
-      latestWinStart = winStarts[winStarts.length - 1]; latestWinEnd = latestWinStart + WINDOW_SECONDS;
+      latestWinStart = winStarts[winStarts.length - 1]; latestWinEnd = windowEndOf(latestWinStart);
       const latest = windows[windows.length - 1]; windows.length = 0; windows.push(latest);
     }
   } else {
     const latest = windows[windows.length - 1]; windows.length = 0; windows.push(latest);
-    latestWinStart = winStarts[winStarts.length - 1]; latestWinEnd = latestWinStart + WINDOW_SECONDS;
+    latestWinStart = winStarts[winStarts.length - 1]; latestWinEnd = windowEndOf(latestWinStart);
   }
   const filtered = allRows.filter(r => r.ts >= latestWinStart && r.ts < latestWinEnd);
   allRows.length = 0;

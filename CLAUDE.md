@@ -116,6 +116,10 @@ the automatic ledger command against the exact transcript, without switching to 
   `scripts/lib/report-window.js` (window totals, the Discussion table, the per-window CSV files) and
   `scripts/lib/report-publish.js` (zip, gist, Discussion, JSON, versions). Do not give Codex its own
   rows, table or file layout. Accounts are numbered in the report, never hashed: it is public.
+- **A reset coupon ends a window early; both /usage-view and /report-limit split there.** Claude
+  Code: `buildGlobalTsMapper(..., { splitOverlaps: true })`. Codex: the lane's windows as recorded
+  (`scripts/lib/codex-limit-windows.js`), never tiled back from the latest reset. Merging put two
+  windows' usage under one 5h label (measured: 9.5 h).
 - **A dual-host skill must not hardcode one host's plugin root.** Claude Code exports
   `CLAUDE_PLUGIN_ROOT`; Codex does not reliably export `CODEX_PLUGIN_ROOT`. Use
   `PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT}}"`, falling back to the skill's own
@@ -227,6 +231,10 @@ scripts/test-workflow-agent-ids.js
 scripts/test-report-limit-codex.js
   → gates /report-limit --host codex: reset jitter is one window, an early reset ends the window
     where the next starts, a 0% lane is left out, accounts split, --blocked = reached 100%
+
+scripts/test-usage-view-early-reset.js
+  → gates /usage-view windows after a reset coupon: Claude Code and Codex both end the window
+    where the next starts
 
 scripts/test-window-account.js
   → gates per-account 5h windows: an account's tab takes window boundaries from its own

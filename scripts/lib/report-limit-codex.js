@@ -10,11 +10,7 @@
  * percentage, the window length and the reset instant (analyze-usage.js keeps them as
  * `rateLimitSamples` in each session summary). What Codex does not publish is how many tokens
  * one percent is, so each 5h row carries how far every limit rose inside it, and a second
- * table lists the limit windows themselves.
- *
- * One limit window is one (limit id, lane, window length) with one reset instant. Codex reports
- * the same reset a few seconds apart from sample to sample, so resets within RESET_JITTER_S of
- * each other are one window.
+ * table lists the limit windows themselves (lib/codex-limit-windows.js).
  *
  * Accounts work as in the Claude Code report: with two or more login accounts on record,
  * each account is its own section, numbered, never named.
@@ -26,10 +22,10 @@ const { forHost } = require('./cache-paths');
 const { loadAccountIndex, accountOf, listAccounts } = require('./accounts');
 const { fmtDate, fmtTime } = require('./format');
 const { assignWindows, FIVE_HOURS_S } = require('./window-utils');
+const { groupSamplesIntoWindows, hasStarted, withTsSec } = require('./codex-limit-windows');
 const { log, makeReportDir, accountHeading, toolVersion, pluginVersion, publishReport } = require('./report-publish');
 const { summarizeWindow, buildWindowTable, writeWindowFiles, isGistFile } = require('./report-window');
 
-const RESET_JITTER_S = 120;
 const RATELIMIT_HEADER = 'ts,limit,lane,window_min,resets_at,used_pct,plan';
 
 const codex = forHost('codex');
@@ -58,45 +54,6 @@ function listCachedSessions() {
     }
   }
   return out;
-}
-
-/**
- * One account's limit windows, from its rate-limit samples. A limit can reset before its
- * scheduled time (measured: 49 s after reaching 100%); the next window of the same lane then
- * takes over, so each window is active until the earlier of its reset and that next start.
- * @returns {Array<{limitId, lane, windowMinutes, start, end, activeEnd, samples}>} sorted by start
- */
-function groupSamplesIntoWindows(samples) {
-  const byLane = new Map(); // limit|lane|window length → samples
-  for (const s of samples) {
-    if (!(s.windowMinutes > 0) || !(s.resetsAt > 0)) continue;
-    const key = [s.limitId, s.lane, s.windowMinutes].join('|');
-    if (!byLane.has(key)) byLane.set(key, []);
-    byLane.get(key).push(s);
-  }
-  const windows = [];
-  for (const laneSamples of byLane.values()) {
-    laneSamples.sort((a, b) => a.resetsAt - b.resetsAt);
-    const lane = [];
-    let current = null;
-    for (const s of laneSamples) {
-      if (!current || s.resetsAt - current.lastReset > RESET_JITTER_S) {
-        current = {
-          limitId: s.limitId, lane: s.lane, windowMinutes: s.windowMinutes,
-          end: s.resetsAt, start: s.resetsAt - s.windowMinutes * 60, lastReset: s.resetsAt, samples: [],
-        };
-        lane.push(current);
-      }
-      current.lastReset = s.resetsAt;
-      current.samples.push(s);
-    }
-    lane.forEach((w, i) => {
-      w.samples.sort((a, b) => a.tsSec - b.tsSec);
-      w.activeEnd = i + 1 < lane.length ? Math.min(w.end, lane[i + 1].start) : w.end;
-    });
-    windows.push(...lane);
-  }
-  return windows.sort((a, b) => a.start - b.start || String(a.limitId).localeCompare(String(b.limitId)));
 }
 
 /**
@@ -171,14 +128,8 @@ function summarizeCodexWindow(w, rows, tagFile) {
 
 /** The account's rate-limit samples, with their time in seconds. */
 function collectSamples(sessions, belongs) {
-  const samples = [];
-  for (const { sess, summary } of sessions) {
-    for (const s of (summary && summary.rateLimitSamples) || []) {
-      const tsSec = Math.floor(Date.parse(s.ts) / 1000);
-      if (Number.isFinite(tsSec) && belongs(sess, tsSec)) samples.push({ ...s, tsSec });
-    }
-  }
-  return samples;
+  return sessions.flatMap(({ sess, summary }) =>
+    withTsSec(summary && summary.rateLimitSamples).filter(s => belongs(sess, s.tsSec)));
 }
 
 /**
@@ -208,10 +159,8 @@ function buildAccountSection(account, ctx) {
   const { sessions, accountIndex, range, blockedOnly } = ctx;
   const belongs = account === null ? () => true : (sess, ts) => accountOf(accountIndex, sess, ts) === account;
 
-  // A window that stays at 0% has not started: Codex keeps pushing its reset forward, so it
-  // shows up as many near-identical windows and says nothing about tokens per percent.
   const limitWindows = groupSamplesIntoWindows(collectSamples(sessions, belongs))
-    .filter(w => w.samples.some(s => Number(s.usedPercent) > 0));
+    .filter(hasStarted);
   for (const w of limitWindows) w.rising = risingSamples(w.samples);
   const shownLimits = limitWindows.filter(w => blockedOnly
     ? w.samples.some(s => Number(s.usedPercent) >= 100)
@@ -388,4 +337,4 @@ function reportCodexLimits({ range, blockedOnly, dryRun }) {
   });
 }
 
-module.exports = { reportCodexLimits, groupSamplesIntoWindows };
+module.exports = { reportCodexLimits };

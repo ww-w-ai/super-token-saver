@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.4] - 2026-09-28
+
+### Fixed: `/usage-view` splits a window a reset coupon cut short
+
+- A reset coupon starts a new limit window before the old one ends. `/usage-view` merged the two
+  into one window, so one 5h label held both windows' usage (measured: 13:10–22:40, 9.5 hours).
+  It now ends the first window where the next starts, as `/report-limit` does since 3.7.1.
+- Codex: the calendar of a lane of one day or less (e.g. 5h) tiled every window back from the
+  latest reset, so after an early reset every earlier window was shifted. It now uses each
+  window as Codex recorded it. The code is shared with `/report-limit`
+  (`scripts/lib/codex-limit-windows.js`).
+
 ## [3.7.3] - 2026-09-28
 
 ### Changed: the Codex `/report-limit` rows are 5h windows
