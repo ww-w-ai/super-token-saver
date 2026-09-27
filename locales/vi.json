@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Mẹo: Hướng dẫn git tích hợp sẵn của CC tiêu tốn ~2.200 tok/phiên + ~1.700 tok/lệnh gọi. `/setup-git-lite install` thay thế bằng mức tối thiểu được chọn lọc 280 tok. `/setup-git-lite dismiss-banner` ẩn mẹo này."
+  },
+  "accounts": {
+    "tab": "Tài khoản {n}",
+    "current": "đang đăng nhập"
   }
 }

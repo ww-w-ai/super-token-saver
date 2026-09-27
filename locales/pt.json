@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Dica: As instruções git integradas do CC consomem ~2.200 tok/sessão + ~1.700 tok/chamada. `/setup-git-lite install` substitui-as por um mínimo curado de 280 tok. `/setup-git-lite dismiss-banner` oculta esta dica."
+  },
+  "accounts": {
+    "tab": "Conta {n}",
+    "current": "login atual"
   }
 }

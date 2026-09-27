@@ -170,5 +170,9 @@
   },
   "gitLite": {
     "tip": "Tip: CC's built-in git instructions consume ~2,200 tok/session + ~1,700 tok/call. `/setup-git-lite install` replaces them with a curated 280-tok minimum. `/setup-git-lite dismiss-banner` hides this tip."
+  },
+  "accounts": {
+    "tab": "Account {n}",
+    "current": "current login"
   }
 }

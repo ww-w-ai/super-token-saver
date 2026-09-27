@@ -272,7 +272,7 @@ Hover any dot for the actual prompt text, the token count, and the full cost bre
 
 Anthropic doesn't publish the exact formula for the 5-hour window. Let's work it out together.
 
-When you hit a rate limit, run `/report-limit`. Your current usage data is submitted as a GitHub Discussion automatically. The more data we collect, the clearer the formula gets.
+Run `/report-limit` — no rate limit needed. It sends every 5-hour window of your last 7 days as a pre-filled GitHub Discussion; review it and submit. `/report-limit blocked` sends only the windows where you hit the limit. The more data we collect, the clearer the formula gets.
 
 ---
 

@@ -267,7 +267,7 @@ Di chuột vào bất kỳ chấm nào để xem văn bản prompt thực tế, 
 
 Anthropic không công bố công thức chính xác cho cửa sổ 5 giờ. Hãy cùng tìm hiểu.
 
-Khi bạn đạt giới hạn tốc độ, chạy `/report-limit`. Dữ liệu sử dụng hiện tại của bạn được tự động gửi dưới dạng GitHub Discussion. Càng nhiều dữ liệu chúng ta thu thập, công thức càng rõ ràng hơn.
+Chạy `/report-limit` — không cần phải bị giới hạn tốc độ trước. Nó gửi mọi khung giờ 5 tiếng trong 7 ngày gần nhất của bạn dưới dạng một GitHub Discussion đã điền sẵn; xem lại rồi gửi. `/report-limit blocked` chỉ gửi những khung giờ mà bạn đã bị giới hạn. Càng nhiều dữ liệu chúng ta thu thập, công thức càng rõ ràng hơn.
 
 ---
 

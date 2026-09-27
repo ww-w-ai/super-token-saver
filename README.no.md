@@ -276,7 +276,7 @@ Hold musepekeren over et punkt for å se den faktiske promptteksten, tokenantall
 
 Anthropic publiserer ikke den eksakte formelen for 5-timersvinduet. La oss finne det ut sammen.
 
-Når du treffer en hastighetsgrense, kjør `/report-limit`. Gjeldende bruksdata sendes automatisk inn som en GitHub Discussion. Jo mer data vi samler, desto klarere blir formelen.
+Kjør `/report-limit` — ingen hastighetsgrense nødvendig. Den sender hvert 5-timersvindu fra de siste 7 dagene som en forhåndsutfylt GitHub Discussion; se gjennom og send inn. `/report-limit blocked` sender bare vinduene der du traff grensen. Jo mer data vi samler, desto klarere blir formelen.
 
 ---
 

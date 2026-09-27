@@ -6,8 +6,11 @@
  * Usage: node analyze-usage.js [options]
  *   --days N            Only analyze last N days (default: ~1 month; 0 = all)
  *   --project <name>    Analyze single project by name (hashed CWD, e.g. -Users-foo-myproject).
- *                       Scans only ~/.claude/projects/{name}/ for transcripts.
+ *                       Scans {root}/{name}/ in every transcript root.
  *                       Default: all projects.
+ *
+ * Transcript roots: ~/.claude/projects, $CLAUDE_CONFIG_DIR/projects, and
+ * per-account config dirs (see lib/transcript-roots.js).
  *   --force             Force re-analyze, ignore cached results
  *
  * Cache structure: ~/.claude/super-token-saver-data/{projectName}/{sessionId}/
@@ -43,6 +46,8 @@ const {
   CODEX_BASE,
   forHost,
   extractProjectName,
+  subagentIdFromPath,
+  isWorkflowJournal,
   getSessionDir,
   getTimelinePath,
   getSummaryPath,
@@ -53,6 +58,7 @@ const {
   projectNameFromCwd,
 } = require("./lib/cache-paths");
 const { MODEL_PRICING, DEFAULT_PRICING, calcCost, UnknownModelError } = require("./lib/pricing");
+const { accountHash } = require("./lib/accounts");
 const { listCodexSessions, normalizeCodexTranscript } = require("./lib/codex-transcript");
 const {
   createSessionUsageTracker,
@@ -62,6 +68,7 @@ const {
   selectLongestRateLimitLane,
 } = require("./lib/codex-usage");
 const { normalizeCodexPlan } = require("./lib/plan-info");
+const { claudeProjectRoots } = require("./lib/transcript-roots");
 
 const PRICING_JSON_PATH = path.join(__dirname, "model-pricing.json");
 const PRICING_SOURCE_URL = "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing";
@@ -82,9 +89,13 @@ function writeFileAtomic(filePath, content) {
   fs.writeFileSync(tmp, content);
   fs.renameSync(tmp, filePath);
 }
-const CACHE_VERSION = 14; // v14: preprocess.js v6 self-managing cache format
+const CACHE_VERSION = 16; // v15: accountChanges (hashed login account per session); v16: Codex accountChanges
+
+// Claude Code writes the login account into a `session_context` attachment at
+// session start and again after `/login` switches accounts. Only that attachment
+// is read, so quoted text in a conversation or a tool result can never match.
+const ACCOUNT_EMAIL_RE = /email address is ([^\s"\\]+?@[^\s"\\]+?)\. Use it only to identify/;
 const _subagentSep = /[/\\]subagents[/\\]/;
-const PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 
 // v1.4.0: Per-row evt tags and structured rl column own all assistant-side
 // event information. Short-form marker strings (*, **, #, ##, ?, %5) are no
@@ -141,27 +152,26 @@ function computeCutoff(opts) {
 }
 
 function findTranscriptDirs(opts) {
+  const roots = claudeProjectRoots();
   if (opts.project) {
     // --project accepts a projectName (hashed CWD, e.g. -Users-foo-myproject)
-    const dir = path.join(PROJECTS_DIR, opts.project);
-    if (!fs.existsSync(dir)) {
-      process.stderr.write(`Warning: transcripts dir not found: ${dir}\n`);
-      return [];
-    }
-    return [dir];
+    const dirs = roots.map((r) => path.join(r, opts.project)).filter((d) => fs.existsSync(d));
+    if (dirs.length === 0) process.stderr.write(`Warning: transcripts dir not found for project: ${opts.project}\n`);
+    return dirs;
   }
-  // Default: all projects
-  if (!fs.existsSync(PROJECTS_DIR)) return [];
-  return fs
-    .readdirSync(PROJECTS_DIR)
-    .map((d) => path.join(PROJECTS_DIR, d))
-    .filter((d) => {
+  // Default: all projects under every root
+  const dirs = [];
+  for (const root of roots) {
+    for (const d of fs.readdirSync(root)) {
+      const full = path.join(root, d);
       try {
-        return fs.statSync(d).isDirectory();
+        if (fs.statSync(full).isDirectory()) dirs.push(full);
       } catch {
-        return false;
+        continue;
       }
-    });
+    }
+  }
+  return dirs;
 }
 
 function listJsonlFiles(dirs, cutoffDate) {
@@ -180,7 +190,7 @@ function listJsonlFiles(dirs, cutoffDate) {
         const stat = fs.statSync(fullPath);
         if (stat.isDirectory()) {
           scanDir(fullPath);
-        } else if (f.endsWith(".jsonl") && stat.mtime >= cutoffDate) {
+        } else if (f.endsWith(".jsonl") && stat.mtime >= cutoffDate && !isWorkflowJournal(fullPath)) {
           // Skip orphaned subagent transcripts (main session deleted)
           if (fullPath.match(_subagentSep)) {
             const parts = fullPath.split(_subagentSep);
@@ -217,8 +227,7 @@ function resolveSessionPaths(filePath) {
   if (filePath.match(_subagentSep)) {
     const parts = filePath.split(_subagentSep);
     const mainSessionId = path.basename(parts[0]); // directory name = mainSessionId
-    // basename is "agent-{agentId}" — strip "agent-" prefix
-    const agentId = basename.startsWith("agent-") ? basename.slice(6) : basename;
+    const agentId = subagentIdFromPath(filePath);
     return {
       summaryPath: getSubagentSummaryPath(projectName, mainSessionId, agentId),
       timelinePath: getSubagentTimelinePath(projectName, mainSessionId, agentId),
@@ -261,6 +270,21 @@ function readCache(cachePath) {
   } catch {
     return null;
   }
+}
+
+// A Workflow agent's cache used to sit under its bare agent id. Left in place it
+// would be read as a second, cache-only agent. Removed only when that cache
+// was written from this same transcript — a direct subagent may own the id.
+function removeLegacyWorkflowCache(paths, filePath) {
+  if (!paths.isAgent) return;
+  const base = path.basename(filePath, ".jsonl");
+  const legacyId = base.startsWith("agent-") ? base.slice(6) : base;
+  if (legacyId === paths.agentId) return;
+  const legacyDir = getSubagentDir(paths.projectName, paths.mainSessionId, legacyId);
+  try {
+    const legacy = JSON.parse(fs.readFileSync(path.join(legacyDir, "summary.json"), "utf8"));
+    if (legacy.filePath === filePath) fs.rmSync(legacyDir, { recursive: true, force: true });
+  } catch { /* no legacy cache */ }
 }
 
 function writeCache(summaryPath, timelinePath, data) {
@@ -317,6 +341,8 @@ async function analyzeSession(filePath) {
   let costUSD = 0;
   const usageTimeline = [];
   const rateLimitEvents = [];
+  // [{ ts, account }] — one entry per login account change, account = accountHash(email)
+  const accountChanges = [];
   const contextEvents = [];
 
   // /continue detection state
@@ -386,6 +412,15 @@ async function analyzeSession(filePath) {
     if (ts) {
       if (!firstTs) firstTs = ts;
       lastTs = ts;
+    }
+
+    if (obj.type === "attachment" && obj.attachment && obj.attachment.type === "session_context") {
+      const m = JSON.stringify(obj.attachment).match(ACCOUNT_EMAIL_RE);
+      if (m) {
+        const account = accountHash(m[1]);
+        const prev = accountChanges[accountChanges.length - 1];
+        if (!prev || prev.account !== account) accountChanges.push({ ts, account });
+      }
     }
 
     // Detect /compact events: system messages with subtype "compact_boundary"
@@ -750,7 +785,7 @@ async function analyzeSession(filePath) {
   }
   const primaryModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
-  const sessionId = path.basename(filePath, ".jsonl");
+  const sessionId = _subagentSep.test(filePath) ? "agent-" + subagentIdFromPath(filePath) : path.basename(filePath, ".jsonl");
   return {
     sessionId,
     filePath,
@@ -767,6 +802,7 @@ async function analyzeSession(filePath) {
     reqEntries,
     usageTimeline,
     rateLimitEvents,
+    accountChanges,
     contextEvents,
     userMessageLog,
   };
@@ -862,13 +898,8 @@ async function main() {
 
     // For agent sessions, read CC's meta.json if available
     if (paths.isAgent && paths.mainSessionId && paths.agentId) {
-      const ccMetaPath = path.join(
-        PROJECTS_DIR,
-        paths.projectName,
-        paths.mainSessionId,
-        "subagents",
-        `agent-${paths.agentId}.meta.json`,
-      );
+      // meta.json sits next to the agent transcript, in whichever root holds it.
+      const ccMetaPath = file.path.replace(/\.jsonl$/, ".meta.json");
       try {
         if (fs.existsSync(ccMetaPath)) {
           const meta = JSON.parse(fs.readFileSync(ccMetaPath, "utf8"));
@@ -879,6 +910,7 @@ async function main() {
     }
 
     writeCache(paths.summaryPath, paths.timelinePath, result);
+    removeLegacyWorkflowCache(paths, file.path);
     // Push metadata only (without usageTimeline)
     const { usageTimeline, ...metadata } = result;
     sessions.push(metadata);
@@ -1006,6 +1038,7 @@ async function main() {
       totalTokens,
       sessionCount: valid.length,
       dateRange,
+      cutoff: cutoff.getTime() > 0 ? cutoff.toISOString() : null,
       host: "claude",
       hasCostData: true,
     },
@@ -1193,6 +1226,8 @@ async function analyzeCodexSession(meta) {
     threadId: meta.threadId || meta.sessionId,
     agent: meta.agent || null,
     host: "codex",
+    // Codex records the login account once per rollout (session_meta.creator_account_id, CLI 0.157+).
+    accountChanges: meta.account ? [{ ts: meta.started || firstTs, account: meta.account }] : [],
     filePath: meta.path,
     cwd: meta.cwd,
     firstTs,
@@ -1290,6 +1325,7 @@ async function mainCodex(opts) {
       sessionCount: mainSessionCount,
       subtaskCount,
       dateRange,
+      cutoff: cutoff.getTime() > 0 ? cutoff.toISOString() : null,
       host: "codex",
       costKnownUSD: null,
       hasCostData: false,

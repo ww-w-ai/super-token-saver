@@ -277,7 +277,7 @@ Najedź na dowolną kropkę, aby zobaczyć rzeczywisty tekst promptu, liczbę to
 
 Anthropic nie publikuje dokładnej formuły okna 5-godzinnego. Ustalmy to razem.
 
-Gdy osiągniesz limit szybkości, uruchom `/report-limit`. Twoje bieżące dane użycia są automatycznie przesyłane jako GitHub Discussion. Im więcej danych zebramy, tym wyraźniejsza stanie się formuła.
+Uruchom `/report-limit` — nie musisz osiągać limitu szybkości. Wysyła każde 5-godzinne okno z ostatnich 7 dni jako wstępnie wypełnioną dyskusję GitHub; przejrzyj i prześlij. `/report-limit blocked` wysyła tylko okna, w których osiągnąłeś limit. Im więcej danych zbierzemy, tym wyraźniejsza stanie się formuła.
 
 ---
 

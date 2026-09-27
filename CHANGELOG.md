@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2026-09-27
+
+### Fixed: `/usage-view` counted the same request more than once
+
+- A resumed or forked session carries copies of earlier requests. Each request ID is now counted
+  once across all sessions; the session that started first keeps it.
+- Rows before the analysis start time are dropped, so cache-only sessions no longer pull older
+  usage into the range. The report exports that start time as `summary.cutoff`.
+- Building a report with more than about 100K rows no longer overflows the stack.
+- A Workflow agent (`subagents/workflows/<wf>/agent-<id>.jsonl`) could share its id with a direct
+  subagent of the same session, and the second one analyzed overwrote the first's cache. Workflow
+  agents are now cached as `<wf>-<id>`; a cache left under the bare id is removed on re-analysis.
+
+### Added: one dashboard tab per login account
+
+- Limits and 5-hour windows are per account, so accounts are no longer mixed. With two or more
+  login accounts on record, `/usage-view` shows a tab per account with its cost; each tab is a
+  full report of that account's rows only. The current login's tab opens first and carries the AI
+  analysis. Rows with no account record belong to the current login.
+- `build-report.js --account <hash>` builds one account's report.
+
+### Changed: `/report-limit` sends every recent window by default
+
+- No argument now reports every 5-hour window of the last 7 days, rate-limited or not. The weekly
+  limit fills without any 5-hour window being blocked, so blocked windows alone missed it.
+- `/report-limit blocked` (`--blocked`) keeps the old behavior: rate-limited windows only.
+- `--dry-run` builds the report and prints it without uploading a gist or opening the browser.
+- The report applies the same exclusions as `/usage-view`: a replayed request counts once, and
+  when two or more login accounts are on record, rows known to belong to another account are left
+  out of the windows and of `ratelimit.csv`. Rows with no account record are kept.
+- Cache writes were summed as total + 5m + 1h, doubling them. Only the total is summed now.
+- A window's session count comes from the rows sent, not from the sessions that touched it.
+
+### Added: every Claude Code config folder is analyzed
+
+- Transcripts are read from `~/.claude/projects`, `$CLAUDE_CONFIG_DIR/projects`, each folder in
+  `$SUPER_TOKEN_SAVER_CONFIG_DIRS`, and per-account launcher folders. The same folder reached
+  twice is read once. Usage from accounts kept in separate config folders was missing before.
+
+### Added: the login account per session, as a hash
+
+- Each session summary records `accountChanges: [{ts, account}]` from Claude Code's
+  `session_context` record, written at session start and after `/login`. `account` is the first
+  12 hex digits of the SHA-256 of the lowercased email; the address itself is never stored.
+  Cache version 16.
+
+### Added
+
+- Claude Opus 5.5 pricing.
+
+### Changed: session guidance routes subagents by what they need
+
+- The SessionStart guidance now picks the launch by need: a fork for main-conversation context
+  or short tasks, a general subagent for the main environment, Explore for read-only search, and
+  `claude -p --setting-sources ""` for long jobs that need neither.
+- Every non-fork subagent is launched on Sonnet (Explore defaults to Haiku otherwise); Opus only
+  for design- or planning-class work. Forks take no model. Do not set
+  `CLAUDE_CODE_SUBAGENT_MODEL` — it overrides forks too.
+- Keep built-in tools open; restricted workers fail back to the main session.
+
+Codex: its guidance file is unchanged (Codex has no fork, Explore, or model aliases), and its
+analysis path does not read Claude config folders.
+
+### Fixed (Codex): a rollout over ~512 MB stopped `/usage-view`, `/s-continue` and `/s-compact`
+
+- Normalizing a Codex rollout read the whole file into one string, which fails past V8's maximum
+  string length. It is now read and written line by line; output is byte-identical and every
+  line keeps its original line number.
+
+### Fixed (Codex): the call after a token-counter restart was counted as zero
+
+- When Codex restarts a session's running token total, the row that follows is a real call
+  (its running total equals its own usage). It is now counted like a session's first row.
+  About 1.4% of a week's Codex tokens were missing.
+
+### Codex and the rest of 3.7.0
+
+- Request dedup: none of the ways Claude Code double-counts occurs in Codex, checked on 5,788
+  rollouts. Forks point at their parent's history instead of copying it (0 copied rows), each
+  session id has one rollout, and a parent's running total excludes its subagents (53 of 53
+  parents), so parent and subagent rows are summed once each.
+- Account tabs: Codex CLI 0.157+ writes the login account into `session_meta`
+  (`creator_account_id`). It is recorded as `accountChanges` with the same 12-digit hash, and two
+  or more Codex accounts get one tab each. Codex tabs show each account's token total, since
+  Codex has no per-token cost. Rollouts from older CLIs carry no account and belong to the
+  current login. Cache version 16.
+- `/report-limit` remains Claude Code only; its Codex port is in `docs/CODEX-PORT-BACKLOG.md`.
+
 ## [3.6.1] - 2026-09-07
 
 ### Fixed: Codex automatic restoration preserves autonomous-run context

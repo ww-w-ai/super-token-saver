@@ -153,6 +153,20 @@ check("compact records the boundary", compact.includes("[auto-compact boundary]"
 check("compact keeps the typed turn", compact.includes("port the reader to rust"), true);
 check("compact footer names the rollout", compact.includes(mainPath), true);
 
+// A rollout can exceed V8's max string length, so lines are read in chunks. Tiny chunks force
+// every line, and a multibyte character, across chunk boundaries.
+const linesFile = path.join(tmp, "lines.jsonl");
+for (const text of ["a\nbb\n\nccc\n", "a\nbb", "", "\n", "한글 줄\n둘째 — 줄\n"]) {
+  fs.writeFileSync(linesFile, text);
+  const expected = text.split("\n");
+  if (expected.length && expected[expected.length - 1] === "") expected.pop();
+  for (const chunk of [1, 2, 3, 7, 1 << 20]) {
+    const got = [];
+    codex.forEachLine(linesFile, (line) => got.push(line), chunk);
+    check(`forEachLine ${JSON.stringify(text)} chunk ${chunk}`, got, expected);
+  }
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 fs.rmSync(path.dirname(cachePath), { recursive: true, force: true });
 fs.rmSync(codex.normalizedPathFor(workCwd, meta.sessionId), { force: true });

@@ -15,8 +15,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentTimelinePath } = require('./lib/cache-paths');
+const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentTimelinePath, getSummaryPath } = require('./lib/cache-paths');
+const { loadAccountIndex, accountAt } = require('./lib/accounts');
 const { buildGlobalTsMapper, FIVE_HOURS_S } = require('./lib/window-utils');
+const { dropReplayedRequests } = require('./lib/request-dedup');
 
 if (process.argv.length < 3) {
   console.error('Usage: node test-data-integrity.js <report-data.json>');
@@ -43,7 +45,7 @@ function loadAllRows() {
         const cost = Number(c[8]) || 0;
         const req = c[13] || '';
         if (req) parentReqs.add(req);
-        if (ts > 0) rows.push({ sessionId: sess, ts, cost });
+        if (ts > 0) rows.push({ sessionId: sess, ts, cost, req });
       }
       for (const ag of listSubagents(proj, sess)) {
         const subCsv = getSubagentTimelinePath(proj, sess, ag);
@@ -55,15 +57,49 @@ function loadAllRows() {
           const cost = Number(c[8]) || 0;
           const req = c[13] || '';
           if (req && parentReqs.has(req)) continue; // dedup
-          if (ts > 0) rows.push({ sessionId: sess + '@' + ag, ts, cost });
+          if (ts > 0) rows.push({ sessionId: sess + '@' + ag, ts, cost, req });
         }
       }
     }
   }
-  return rows;
+  // Same rule as the report: each requestId counted once across sessions.
+  const bySession = new Map();
+  for (const r of rows) {
+    if (!bySession.has(r.sessionId)) bySession.set(r.sessionId, []);
+    bySession.get(r.sessionId).push(r);
+  }
+  dropReplayedRequests(bySession);
+  // Same rule as the report: each row belongs to one login account; rows with no
+  // record belong to the current login.
+  const entries = [];
+  for (const proj of listProjects()) {
+    for (const sess of listSessions(proj)) {
+      try {
+        const s = JSON.parse(fs.readFileSync(getSummaryPath(proj, sess), 'utf8'));
+        if (s.accountChanges) entries.push({ sessionId: sess, changes: s.accountChanges });
+      } catch { /* no summary */ }
+    }
+  }
+  const index = loadAccountIndex(entries);
+  const kept = [...bySession.values()].flat();
+  for (const r of kept) r.account = accountAt(index, r.sessionId.split('@')[0], r.ts) || index.current;
+  return { rows: kept, index };
 }
 
-const allRows = loadAllRows();
+const SOURCE = loadAllRows();
+// The top-level report is one account's; with account tabs, each other account is
+// checked against its own rows the same way.
+const checks = [[REPORT, REPORT.account || SOURCE.index.current]];
+for (const [account, data] of Object.entries(REPORT.otherAccounts || {})) checks.push([data, account]);
+let totalFail = 0;
+for (const [report, account] of checks) {
+  if (checks.length > 1) console.log(`\n##### Account ${account} #####`);
+  const rows = SOURCE.index.filtering ? SOURCE.rows.filter((r) => r.account === account) : SOURCE.rows;
+  totalFail += checkReport(report, rows.map((r) => ({ ...r })));
+}
+process.exit(totalFail === 0 ? 0 : 1);
+
+function checkReport(REPORT, allRows) {
 
 // Filter to report's date range
 if (REPORT.summary && REPORT.summary.dateFrom) {
@@ -73,7 +109,10 @@ if (REPORT.summary && REPORT.summary.dateFrom) {
     const [m, d] = s.split('/').map(Number);
     return Math.floor(new Date(yr, m - 1, d, 0, 0, 0).getTime() / 1000);
   }
-  const fromTs = parseMD(REPORT.summary.dateFrom);
+  // The report drops rows before the exact cutoff, not the cutoff's midnight.
+  const fromTs = REPORT.summary.cutoff
+    ? Math.floor(new Date(REPORT.summary.cutoff).getTime() / 1000)
+    : parseMD(REPORT.summary.dateFrom);
   const toTs = parseMD(REPORT.summary.dateTo) + 86400; // include full last day
   const before = allRows.length;
   for (let i = allRows.length - 1; i >= 0; i--) {
@@ -184,4 +223,5 @@ console.log(`Sum of all rows:     $${totalRows.toFixed(2)}`);
 console.log(`Sum report.windows:  $${totalReport.toFixed(2)}`);
 console.log(`Delta:               $${(totalReport - totalRows).toFixed(2)}`);
 
-process.exit(fail === 0 ? 0 : 1);
+  return fail;
+}

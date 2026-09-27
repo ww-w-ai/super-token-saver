@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "เคล็ดลับ: คำสั่ง git ในตัวของ CC ใช้ ~2,200 tok/เซสชัน + ~1,700 tok/การเรียก `/setup-git-lite install` แทนที่ด้วยชุดขั้นต่ำที่คัดสรร 280 tok `/setup-git-lite dismiss-banner` ซ่อนเคล็ดลับนี้"
+  },
+  "accounts": {
+    "tab": "บัญชี {n}",
+    "current": "ที่เข้าสู่ระบบอยู่"
   }
 }

@@ -13,9 +13,12 @@
  * Cache structure: ~/.claude/super-token-saver-data/{projectName}/{sessionId}/
  *   timeline.csv, ratelimit.csv, summary.json, subagents/{agentId}/...
  *
- * Usage: node report-limit.js [--plan <plan>] [--date <YYYY-MM-DD>]
- *   --plan  pro|max100|max200|team|team_premium|enterprise|bedrock|foundry|vertex
- *   --date  Report a specific date's 5h windows (not just rate-limited ones)
+ * Usage: node report-limit.js [--plan <plan>] [--date <YYYY-MM-DD> | --blocked] [--dry-run]
+ *   --plan     pro|max100|max200|team|team_premium|enterprise|bedrock|foundry|vertex
+ *   (default)  every 5h window of the last 7 days, rate-limited or not
+ *   --date     every 5h window overlapping that date
+ *   --blocked  only rate-limited windows, across all cached data
+ *   --dry-run  build the report and print it; no gist upload, no browser
  */
 
 const { execFileSync } = require('child_process');
@@ -23,7 +26,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { buildGlobalWindowMap, FIVE_HOURS_S } = require('./lib/window-utils');
-const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentTimelinePath, getRatelimitPath, hashId, CACHE_BASE: CACHE_DIR, migrateFromYYMM } = require('./lib/cache-paths');
+const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentTimelinePath, getRatelimitPath, getSummaryPath, hashId, CACHE_BASE: CACHE_DIR, migrateFromYYMM } = require('./lib/cache-paths');
+const { dropReplayedRequests } = require('./lib/request-dedup');
+const { loadAccountIndex, isCurrentAccount } = require('./lib/accounts');
 const { PLAN_INFO, VALID_PLANS } = require('./lib/plan-info');
 const { fmtTokens, fmtDate, fmtTime } = require('./lib/format');
 
@@ -62,6 +67,24 @@ if (dateIdx !== -1 && process.argv[dateIdx + 1]) {
   targetDate = parsed;
 }
 
+const blockedOnly = process.argv.includes('--blocked');
+const dryRun = process.argv.includes('--dry-run');
+if (blockedOnly && targetDate) {
+  log('--blocked and --date cannot be combined.');
+  process.exit(1);
+}
+
+// Range for the all-windows modes: the given date, or the last 7 days (one weekly-limit cycle).
+const DEFAULT_RANGE_DAYS = 7;
+const range = (() => {
+  if (targetDate) {
+    const start = Math.floor(targetDate.getTime() / 1000);
+    return { start, end: start + 86400, label: targetDate.toISOString().slice(0, 10) };
+  }
+  const end = Math.floor(Date.now() / 1000);
+  return { start: end - DEFAULT_RANGE_DAYS * 86400, end, label: 'last ' + DEFAULT_RANGE_DAYS + ' days' };
+})();
+
 // ── Step 1: Run analyze-usage.js to ensure timeline CSVs exist ──
 log('Running analyze-usage.js to ensure timeline CSVs exist...');
 try {
@@ -99,9 +122,8 @@ const windowMap = new Map();
 // Track sessionId → projectName for sessions.csv
 const sessionProjectMap = new Map();
 
-// ── Step 2a: Scan for rate-limited windows (skip when --date is specified) ──
-// When --date is given, we report ALL windows for that date regardless of rate limit status.
-if (!targetDate) {
+// ── Step 2a: --blocked — rate-limited windows only, across all cached data ──
+if (blockedOnly) {
   for (const proj of projects) {
     const sessions = listSessions(proj);
     for (const sess of sessions) {
@@ -153,12 +175,12 @@ if (!targetDate) {
   }
 }
 
-// ── Step 2b: If --date specified, add all 5h windows overlapping that date ──
-// A 5h window overlaps the target date if: winStart < dayEnd AND winStart + 5h > dayStart
-// Scan rows in [dayStart - 5h, dayEnd) to catch windows starting before midnight
-if (targetDate) {
-  const dayStart = Math.floor(targetDate.getTime() / 1000);
-  const dayEnd = dayStart + 86400;
+// ── Step 2b: default and --date — every 5h window overlapping the range ──
+// A 5h window overlaps the range if: winStart < rangeEnd AND winStart + 5h > rangeStart
+// Scan rows in [rangeStart - 5h, rangeEnd) to catch windows starting before the range
+if (!blockedOnly) {
+  const dayStart = range.start;
+  const dayEnd = range.end;
   const scanStart = dayStart - FIVE_HOURS_S; // catch windows starting up to 5h before midnight
   for (const proj of projects) {
     const sessions = listSessions(proj);
@@ -196,15 +218,15 @@ if (targetDate) {
 }
 
 if (windowMap.size === 0) {
-  if (targetDate) {
-    log('No data found for ' + targetDate.toISOString().slice(0, 10) + '. Run /usage-view first.');
-  } else {
+  if (blockedOnly) {
     log('No rate-limited windows found in cached data. Run /usage-view first to analyze all sessions, then try again.');
+  } else {
+    log('No data found for ' + range.label + '. Run /usage-view first.');
   }
   process.exit(0);
 }
 
-log('Found ' + windowMap.size + ' raw window(s)' + (targetDate ? ' (date filter: ' + targetDate.toISOString().slice(0, 10) + ')' : '') + '.');
+log('Found ' + windowMap.size + ' raw window(s) (' + (blockedOnly ? 'rate-limited only' : range.label) + ').');
 
 // ── Step 3: Build 5h windows from all active hours + ratelimit data ──
 // Uses buildGlobalWindowMap which scans ALL projects (account-wide).
@@ -226,7 +248,68 @@ const mergedWindows = [...fiveHWindowMap.keys()].sort((a, b) => a - b)
 
 log('After grouping: ' + mergedWindows.length + ' window(s).');
 
-// ── Step 4: For each merged window, collect ALL rows within the range ──
+// ── Step 4: Load every timeline once, apply the report's exclusions ──
+// Same rules as /usage-view: a replayed request (resume/fork copies) counts once,
+// and with two or more login accounts on record only the current account's rows
+// are sent — the limit being reported belongs to that account.
+const rlTimeStart = Math.min(...mergedWindows.map(w => w.start));
+const rlTimeEnd = Math.max(...mergedWindows.map(w => w.end));
+
+const timelines = new Map(); // session tag → [{ ts, req, cols }]
+const tagFile = new Map();   // session tag → timeline path
+const tagParent = new Map(); // session tag → main session id (accounts are per main session)
+const accountEntries = [];
+
+function loadTimeline(filePath, tag) {
+  if (!fs.existsSync(filePath)) return;
+  const content = fs.readFileSync(filePath, 'utf8').trim();
+  if (!content) return;
+  const lines = content.split('\n');
+  const out = [];
+  let prevModel = '';
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length < 11) continue;
+    // Fill sparse model only (win is left as-is per original CSV)
+    if (cols[1]) prevModel = cols[1]; else cols[1] = prevModel;
+    const ts = Number(cols[0]);
+    if (ts < rlTimeStart || ts >= rlTimeEnd) continue;
+    out.push({ ts, req: cols[13] || '', cols });
+  }
+  if (out.length) { timelines.set(tag, out); tagFile.set(tag, filePath); }
+}
+
+for (const proj of projects) {
+  for (const sess of listSessions(proj)) {
+    try {
+      const summary = JSON.parse(fs.readFileSync(getSummaryPath(proj, sess), 'utf8'));
+      if (summary.accountChanges) accountEntries.push({ sessionId: sess, changes: summary.accountChanges });
+    } catch { /* no summary: session keeps the global account at its time */ }
+    loadTimeline(getTimelinePath(proj, sess), sess);
+    tagParent.set(sess, sess);
+    for (const agent of listSubagents(proj, sess)) {
+      loadTimeline(getSubagentTimelinePath(proj, sess, agent), 'agent-' + agent);
+      tagParent.set('agent-' + agent, sess);
+    }
+  }
+}
+
+const replayedRows = dropReplayedRequests(timelines);
+if (replayedRows > 0) log('Dropped ' + replayedRows + ' replayed request row(s) (resumed or forked sessions).');
+
+const accountIndex = loadAccountIndex(accountEntries);
+const allTimelineRows = [];
+let otherAccountRows = 0;
+for (const [tag, list] of timelines) {
+  for (const r of list) {
+    if (!isCurrentAccount(accountIndex, tagParent.get(tag), r.ts)) { otherAccountRows++; continue; }
+    allTimelineRows.push({ ...r, tag });
+  }
+}
+if (otherAccountRows > 0) log('Excluded ' + otherAccountRows + ' row(s) from other login accounts.');
+allTimelineRows.sort((a, b) => a.ts - b.ts);
+
+// ── Step 4b: Aggregate each window from the kept rows ──
 const results = [];
 const fmtD = fmtDate;
 const fmtT = fmtTime;
@@ -234,60 +317,20 @@ const fmtT = fmtTime;
 for (const merged of mergedWindows) {
   const winStart = merged.start;
   const winEnd = merged.end;
-  const rows = [];
-  const touchedFiles = { timeline: new Set() };
-  // Token aggregation per window
+  const kept = allTimelineRows.filter(r => r.ts >= winStart && r.ts < winEnd);
+  if (kept.length === 0) continue; // every row was a replay or another account's
+
+  const hasUnknown = fiveHWindowMap.get(winStart)?.hasUnknown || false;
+  const touchedFiles = { timeline: new Set(kept.map(r => tagFile.get(r.tag))) };
+  const windowSessions = new Set(kept.map(r => r.tag));
   let sumInput = 0, sumOutput = 0, sumCacheWrite = 0, sumCacheRead = 0;
-
-  // Get sessions and hasUnknown from 5h window map
-  const fiveHInfo = fiveHWindowMap.get(winStart);
-  const mergedSessions = fiveHInfo ? fiveHInfo.sessions : new Set();
-  const hasUnknown = fiveHInfo ? fiveHInfo.hasUnknown : false;
-
-  // Helper: read CSV, fill sparse model/win, collect rows in [winStart, winEnd)
-  function collectFromCsv(filePath, sessionTag) {
-    if (!fs.existsSync(filePath)) return false;
-    const content = fs.readFileSync(filePath, 'utf8').trim();
-    if (!content) return false;
-    const lines = content.split('\n');
-    let prevModel = '';
-    let hasRows = false;
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',');
-      if (cols.length < 11) continue;
-      // Fill sparse model only (win is left as-is per original CSV)
-      if (cols[1]) prevModel = cols[1]; else cols[1] = prevModel;
-      const ts = Number(cols[0]);
-      if (ts < winStart || ts >= winEnd) continue;
-      cols.push(sessionTag);
-      rows.push(cols.join(','));
-      hasRows = true;
-      sumInput += Number(cols[2]) || 0;
-      sumOutput += Number(cols[7]) || 0;
-      sumCacheWrite += (Number(cols[3]) || 0) + (Number(cols[4]) || 0) + (Number(cols[5]) || 0);
-      sumCacheRead += Number(cols[6]) || 0;
-    }
-    return hasRows;
-  }
-
-  for (const proj of projects) {
-    const projSessions = listSessions(proj);
-    for (const sess of projSessions) {
-      const filePath = getTimelinePath(proj, sess);
-      if (collectFromCsv(filePath, sess)) {
-        touchedFiles.timeline.add(filePath);
-      }
-      const agents = listSubagents(proj, sess);
-      for (const agent of agents) {
-        const agentFilePath = getSubagentTimelinePath(proj, sess, agent);
-        if (collectFromCsv(agentFilePath, 'agent-' + agent)) {
-          touchedFiles.timeline.add(agentFilePath);
-        }
-      }
-    }
-  }
-
-  rows.sort((a, b) => Number(a.split(',')[0]) - Number(b.split(',')[0]));
+  const rows = kept.map(r => {
+    sumInput += Number(r.cols[2]) || 0;
+    sumOutput += Number(r.cols[7]) || 0;
+    sumCacheWrite += Number(r.cols[3]) || 0; // cc is the total; cc5m/cc1h are its split
+    sumCacheRead += Number(r.cols[6]) || 0;
+    return [...r.cols, r.tag].join(',');
+  });
 
   const startD = new Date(winStart * 1000);
   const endD = new Date(winEnd * 1000);
@@ -353,7 +396,7 @@ for (const merged of mergedWindows) {
     date: fmtD(startD),
     start: fmtT(startD),
     end: fmtT(endD),
-    sessions: mergedSessions.size,
+    sessions: windowSessions.size,
     requests: rows.length,
     cost: Math.round(totalCost * 100) / 100,
     input: sumInput,
@@ -366,6 +409,11 @@ for (const merged of mergedWindows) {
     touchedFiles,
     hasUnknown,
   });
+}
+
+if (results.length === 0) {
+  log('No rows left for ' + (blockedOnly ? 'the rate-limited windows' : range.label) + ' after removing replayed requests and other login accounts.');
+  process.exit(0);
 }
 
 // ── Step 5: Build session index & write per-window CSV files ────
@@ -447,13 +495,11 @@ for (const w of results) {
   }
 }
 
-// Merge ratelimit CSVs from ALL projects (account-wide, independent of timeline).
+// Merge ratelimit CSVs from ALL projects, current login account only (another
+// account's % would interleave with this one's and break the change-only dedup).
 // ratelimit.csv only exists for sessions after setup-statusline; absence is normal.
 // Multiple concurrent sessions record the same /usage snapshots, so we merge all
 // source files, sort by timestamp, and keep only the first row where % changes.
-const rlTimeStart = Math.min(...results.map(w => w.winStart));
-const rlTimeEnd = Math.max(...results.map(w => w.winEnd));
-
 const allRows = new Set();
 for (const proj of projects) {
   const sessions = listSessions(proj);
@@ -466,7 +512,7 @@ for (const proj of projects) {
     for (let i = 1; i < lines.length; i++) {
       if (!lines[i]) continue;
       const ts = Number(lines[i].split(',')[0]);
-      if (ts >= rlTimeStart && ts < rlTimeEnd) allRows.add(lines[i]);
+      if (ts >= rlTimeStart && ts < rlTimeEnd && isCurrentAccount(accountIndex, sess, ts)) allRows.add(lines[i]);
     }
   }
 }
@@ -536,7 +582,7 @@ try {
   log('GitHub CLI not authenticated. Run "gh auth login" to authenticate.');
 }
 
-if (ghAuthenticated) {
+if (ghAuthenticated && !dryRun) {
   try {
     // Gist only supports text files — upload window + ratelimit CSVs
     const gistFiles = fs.readdirSync(reportDir)
@@ -647,16 +693,20 @@ const discussionUrl = 'https://github.com/' + REPO + '/discussions/new'
   + '&body=' + encodeURIComponent(body);
 
 let discussionOpened = false;
-try {
-  execFileSync('open', [discussionUrl], { stdio: 'pipe' });
-  discussionOpened = true;
-  log('Discussion opened in browser.');
-} catch (e) {
-  log('Could not open browser. Discussion URL:\n' + discussionUrl);
+if (dryRun) {
+  log('--dry-run: nothing uploaded or opened.\n\n# ' + title + '\n\n' + body + '\n\nDiscussion URL length: ' + discussionUrl.length);
+} else {
+  try {
+    execFileSync('open', [discussionUrl], { stdio: 'pipe' });
+    discussionOpened = true;
+    log('Discussion opened in browser.');
+  } catch (e) {
+    log('Could not open browser. Discussion URL:\n' + discussionUrl);
+  }
 }
 
 // ── Step 11: If gist failed, open containing directory in Finder ────────────
-if (!gistUrl) {
+if (!gistUrl && !dryRun) {
   const openTarget = zipCreated ? path.dirname(zipFile) : reportDir;
   try {
     execFileSync('open', [openTarget], { stdio: 'pipe' });
@@ -687,6 +737,8 @@ const summary = {
   zipFile: zipCreated ? zipFile : null,
   reportDir: reportDir,
   discussionOpened: discussionOpened,
+  dryRun: dryRun,
+  discussionUrlLength: discussionUrl.length,
 };
 
 console.log(JSON.stringify(summary, null, 2));

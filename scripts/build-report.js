@@ -60,12 +60,14 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { buildGlobalWindowMap, buildGlobalTsMapper, FIVE_HOURS_S } = require('./lib/window-utils');
-const { forHost, migrateFromYYMM, extractProjectName, projectNameFromCwd, CACHE_BASE: CACHE_DIR } = require('./lib/cache-paths');
+const { forHost, migrateFromYYMM, extractProjectName, subagentIdFromPath, projectNameFromCwd, CACHE_BASE: CACHE_DIR } = require('./lib/cache-paths');
 const { PLAN_INFO: PLAN_INFO_ALL, CODEX_PLAN_INFO, resolveCodexPlanChoice } = require('./lib/plan-info');
 const { round2 } = require('./lib/format');
 const { SUPPORTED_LOCALES, resolveLocale } = require('./lib/locale');
 const { MODEL_PRICING, DEFAULT_PRICING, getRates } = require('./lib/pricing');
 const { selectLongestRateLimitLane, clusterUsagePointsByModel, computeCodexCreditEquivalent } = require('./lib/codex-usage');
+const { dropReplayedRequests } = require('./lib/request-dedup');
+const { loadAccountIndex, accountAt } = require('./lib/accounts');
 const _subagentSep = /[/\\]subagents[/\\]/;
 function isSubagentSession(session) {
   return !!(session && (session.isSubagent === true || (session.filePath && _subagentSep.test(session.filePath))));
@@ -81,7 +83,7 @@ const DEFAULT_COST_FILTER = 0.80; // calendar detail panel default filter
 
 // ── Args ────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
-let dataPath = null, outputPath = null, currentMode = false, aiDataPath = null, exportPromptPath = null, exportDataPath = null, importDataPath = null, localeArg = null, planArg = null, projectFilter = null, privateMode = false, hostArg = 'claude';
+let dataPath = null, outputPath = null, currentMode = false, aiDataPath = null, exportPromptPath = null, exportDataPath = null, importDataPath = null, localeArg = null, planArg = null, projectFilter = null, privateMode = false, hostArg = 'claude', accountArg = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--data' && args[i + 1]) { dataPath = args[++i]; }
   else if (args[i] === '--output' && args[i + 1]) { outputPath = args[++i]; }
@@ -95,6 +97,7 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--project' && args[i + 1]) { projectFilter = args[++i]; }
   else if (args[i] === '--private') { privateMode = true; }
   else if (args[i] === '--host' && args[i + 1]) { hostArg = args[++i]; }
+  else if (args[i] === '--account' && args[i + 1]) { accountArg = args[++i]; }
 }
 
 // Codex has no pricing table and no fixed 5h window — everything else
@@ -174,6 +177,20 @@ function injectI18N(html) {
     html.slice(ei + i18nEnd.length);
 }
 
+// REPORT_DATA as page script. With account tabs, `#account=<hash>` picks another
+// account's report at load; the tab bar reloads the page to switch.
+function reportDataScript(reportData) {
+  const json = JSON.stringify(reportData, null, 0).replace(/<\//g, '<\\/');
+  if (!reportData.otherAccounts) return 'const REPORT_DATA = ' + json + ';';
+  return 'const REPORT_DATA = (function (d) {\n'
+    + '  var m = location.hash.match(/account=([0-9a-f]+)/);\n'
+    + '  var o = m && d.otherAccounts[m[1]];\n'
+    + '  if (!o) return d;\n'
+    + '  o.accountList = d.accountList;\n'
+    + '  return o;\n'
+    + '})(' + json + ');';
+}
+
 function injectHtmlLang(html) {
   const dir = localeData.meta && localeData.meta.direction === 'rtl' ? ' dir="rtl"' : '';
   return html.replace(/<html lang="[^"]*"[^>]*>/, `<html lang="${resolvedLocale}"${dir}>`);
@@ -235,9 +252,8 @@ if (importDataPath) {
     process.exit(1);
   }
   const endIdx = endRaw + marker_end.length;
-  const jsonStr = JSON.stringify(reportData, null, 0).replace(/<\//g, '<\\/');
   const output = template.slice(0, startIdx) +
-    marker_start + '\nconst REPORT_DATA = ' + jsonStr + ';\n' + marker_end +
+    marker_start + '\n' + reportDataScript(reportData) + '\n' + marker_end +
     template.slice(endIdx);
   fs.writeFileSync(outputPath, output);
   console.error(`Report written to ${outputPath} (${output.length} bytes)`);
@@ -520,8 +536,8 @@ function readAcompactAggregate(proj, parentSessionId, agentDirName) {
 // stale cache cannot widen the period.
 {
   const known = new Set(raw.sessions.map((s) => s.sessionId));
-  const fromTs = raw.summary && raw.summary.dateRange && raw.summary.dateRange.from
-    ? new Date(raw.summary.dateRange.from).getTime() : 0;
+  const fromIso = raw.summary && (raw.summary.cutoff || (raw.summary.dateRange && raw.summary.dateRange.from));
+  const fromTs = fromIso ? new Date(fromIso).getTime() : 0;
   const wantHost = isCodex ? 'codex' : 'claude';
   const readSummary = (p) => {
     try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; }
@@ -629,8 +645,7 @@ for (const s of raw.sessions) {
   if (!proj) continue;
   if (_subagentSep.test(s.filePath)) {
     const parentSessionId = path.basename(s.filePath.split(_subagentSep)[0]);
-    const base = path.basename(s.filePath, '.jsonl');
-    const agentDirName = base.startsWith('agent-') ? base.slice(6) : base;
+    const agentDirName = subagentIdFromPath(s.filePath);
     const info = { proj, parentSessionId, agentDirName };
     _sessionProjectMap.set(agentDirName, info);
     _sessionProjectMap.set('agent-' + agentDirName, info);
@@ -648,6 +663,48 @@ for (const s of raw.sessions) {
   const rows = readTimelineCsv(s.sessionId);
   if (rows.length > 0) allTimelines.set(s.sessionId, rows);
 }
+const replayedRows = dropReplayedRequests(allTimelines);
+if (replayedRows > 0) process.stderr.write(`Cross-session replay dedup dropped ${replayedRows} rows\n`);
+dropRowsBeforeCutoff(allTimelines, raw.summary && raw.summary.cutoff);
+// Limits and 5h windows are per login account. With two or more accounts on record,
+// the report covers one account: `--account <hash>`, or the current login by default.
+// Rows with no account record belong to the current login.
+const accountIndex = loadAccountIndex(raw.sessions
+  .filter((s) => s.accountChanges)
+  .map((s) => ({ sessionId: s.sessionId, changes: s.accountChanges })));
+const reportAccount = accountArg || accountIndex.current;
+const otherAccountRows = keepAccountRows(allTimelines, reportAccount);
+if (otherAccountRows > 0) process.stderr.write(`Dropped ${otherAccountRows} rows from other login accounts\n`);
+
+function keepAccountRows(timelines, account) {
+  if (!accountIndex.filtering) return 0;
+  let dropped = 0;
+  for (const [sid, rows] of timelines) {
+    const info = _sessionProjectMap.get(sid);
+    const owner = (info && info.parentSessionId) || sid;
+    const kept = rows.filter((r) => (accountAt(accountIndex, owner, r.ts) || accountIndex.current) === account);
+    dropped += rows.length - kept.length;
+    if (kept.length === 0) timelines.delete(sid);
+    else if (kept.length !== rows.length) timelines.set(sid, kept);
+  }
+  return dropped;
+}
+
+// "Last N days" means rows since the cutoff. A session that started before the
+// cutoff still enters the report (through its cached summary) when it ran into
+// the period, and without this trim its whole history before the cutoff came
+// with it. Runs after dropReplayedRequests so a copy is judged against its
+// original even when the original lies before the cutoff.
+function dropRowsBeforeCutoff(timelines, cutoffIso) {
+  if (!cutoffIso) return;
+  const cutoffTs = new Date(cutoffIso).getTime() / 1000;
+  for (const [sid, rows] of timelines) {
+    const kept = rows.filter((r) => r.ts >= cutoffTs);
+    if (kept.length === 0) timelines.delete(sid);
+    else if (kept.length !== rows.length) timelines.set(sid, kept);
+  }
+}
+
 
 // Flatten all rows for aggregation
 const allRows = [];
@@ -1442,6 +1499,8 @@ const summary = {
   subtaskCount: scopedSessionSummary.subtaskCount,
   dateFrom: fsd(fromD),
   dateTo: fsd(toD),
+  // Exact analysis start (ISO). Rows before it were dropped; dateFrom is only its day.
+  cutoff: (raw.summary && raw.summary.cutoff) || null,
   days
 };
 // REPORT_DATA.sessionAttribution — additive, both hosts. Reassigned in the
@@ -2136,8 +2195,8 @@ if (currentMode && windows.length > 0) {
 
   // Recalculate summary to match filtered 5H window
   if (allRows.length > 0) {
-    const minTs = Math.min(...allRows.map(r => r.ts));
-    const maxTs = Math.max(...allRows.map(r => r.ts));
+    const minTs = allRows.reduce((m, r) => (r.ts < m ? r.ts : m), Infinity);
+    const maxTs = allRows.reduce((m, r) => (r.ts > m ? r.ts : m), -Infinity);
     const cfrom = new Date(minTs * 1000);
     const cto = new Date(maxTs * 1000);
     summary.dateFrom = fsd(cfrom) + ' ' + ft(cfrom);
@@ -2258,8 +2317,8 @@ for (const row of allRows) {
 
 // Boundary timestamps for partial-hour weighting
 // Note: uses local time (getHours). DST transitions may cause ±1h per year — negligible.
-const firstTs = allRows.length > 0 ? Math.min(...allRows.map(r => r.ts)) : 0;
-const lastTs = allRows.length > 0 ? Math.max(...allRows.map(r => r.ts)) : 0;
+const firstTs = allRows.length > 0 ? allRows.reduce((m, r) => (r.ts < m ? r.ts : m), Infinity) : 0;
+const lastTs = allRows.length > 0 ? allRows.reduce((m, r) => (r.ts > m ? r.ts : m), -Infinity) : 0;
 const firstD = new Date(firstTs * 1000);
 const lastD = new Date(lastTs * 1000);
 const firstHour = firstD.getHours();
@@ -2512,7 +2571,7 @@ const ctxDistribution = ctxBuckets.map(b => ({
   avgCost: b.count > 0 ? round2(b.cost / b.count) : 0,
   pct: allRows.length > 0 ? round2(b.count / allRows.length * 100) : 0,
 }));
-const calendarDataEndExclusiveTs = allRows.length > 0 ? Math.max(...allRows.map(row => row.ts)) + 1 : null;
+const calendarDataEndExclusiveTs = allRows.length > 0 ? allRows.reduce((m, row) => (row.ts > m ? row.ts : m), -Infinity) + 1 : null;
 
 // ── Assemble REPORT_DATA ────────────────────────────────────────
 // host/hasCostData/costKnownUSD/rateLimitSamples/windowMinutes are additive —
@@ -2721,6 +2780,43 @@ if (privateMode) {
   }
   reportData.privateMode = true;
   console.error('Private mode: user prompt text stripped from report data');
+}
+
+// ── Per-account tabs: one full report per other login account ──
+// The top-level report is the current login's (or --account's). Each other account
+// is built by re-running this script with --account; the template switches between
+// them by `#account=<hash>`. AI analysis is attached to the top-level account only.
+if (accountIndex.filtering && !accountArg) {
+  const accounts = [...new Set(accountIndex.all.map((c) => c.account))];
+  reportData.account = reportAccount;
+  reportData.accountList = [{ id: reportAccount, current: true, cost: round2(summary.totalCost), tokens: summary.totalUsageTokens }];
+  reportData.otherAccounts = {};
+  for (const account of accounts.filter((a) => a !== reportAccount)) {
+    const tmp = path.join(os.tmpdir(), `cc-report-account-${account}-${process.pid}`);
+    const childArgs = [__filename, '--data', dataPath, '--account', account,
+      '--export-data', tmp + '.json', '--output', tmp + '.html', '--host', hostArg];
+    if (currentMode) childArgs.push('--current');
+    if (privateMode) childArgs.push('--private');
+    if (localeArg) childArgs.push('--locale', localeArg);
+    if (planArg) childArgs.push('--plan', planArg);
+    if (projectFilter) childArgs.push('--project', projectFilter);
+    try {
+      require('child_process').execFileSync(process.execPath, childArgs, { stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+      const data = JSON.parse(fs.readFileSync(tmp + '.json', 'utf8'));
+      if (data.windows && data.windows.length) {
+        data.account = account;
+        reportData.otherAccounts[account] = data;
+        reportData.accountList.push({ id: account, current: false, cost: round2(data.summary.totalCost), tokens: data.summary.totalUsageTokens });
+      }
+    } catch (e) {
+      process.stderr.write(`Account ${account}: report failed (${(e.stderr || e.message).toString().slice(-200)})\n`);
+    } finally {
+      fs.rmSync(tmp + '.json', { force: true });
+      fs.rmSync(tmp + '.html', { force: true });
+    }
+  }
+  if (reportData.accountList.length < 2) { delete reportData.accountList; delete reportData.otherAccounts; }
+  else process.stderr.write(`Account tabs: ${reportData.accountList.length}\n`);
 }
 
 if (exportDataPath) {
@@ -3076,9 +3172,8 @@ if (startIdx === -1 || endRaw === -1) {
 }
 const endIdx = endRaw + marker_end.length;
 
-const jsonStr = JSON.stringify(reportData, null, 0).replace(/<\//g, '<\\/');
 const output = template.slice(0, startIdx) +
-  marker_start + '\nconst REPORT_DATA = ' + jsonStr + ';\n' + marker_end +
+  marker_start + '\n' + reportDataScript(reportData) + '\n' + marker_end +
   template.slice(endIdx);
 
 fs.writeFileSync(outputPath, output);

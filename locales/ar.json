@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "تلميح: تستهلك تعليمات git المدمجة في CC حوالي 2,200 tok/جلسة + ~1,700 tok/استدعاء. يستبدلها `/setup-git-lite install` بحد أدنى منسق من 280 tok. يخفي `/setup-git-lite dismiss-banner` هذا التلميح."
+  },
+  "accounts": {
+    "tab": "الحساب {n}",
+    "current": "تسجيل الدخول الحالي"
   }
 }

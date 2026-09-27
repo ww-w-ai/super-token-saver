@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "提示：CC 内置的 git 指令每会话消耗约 2,200 tok + 每次调用约 1,700 tok。使用 `/setup-git-lite install` 替换为精心挑选的 280-tok 最小版本。`/setup-git-lite dismiss-banner` 可隐藏此提示。"
+  },
+  "accounts": {
+    "tab": "账户 {n}",
+    "current": "当前登录"
   }
 }

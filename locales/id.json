@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Tip: Instruksi git bawaan CC mengonsumsi ~2,200 tok/sesi + ~1,700 tok/panggilan. `/setup-git-lite install` menggantinya dengan 280-tok minimum yang dikurasi. `/setup-git-lite dismiss-banner` menyembunyikan tip ini."
+  },
+  "accounts": {
+    "tab": "Akun {n}",
+    "current": "login saat ini"
   }
 }

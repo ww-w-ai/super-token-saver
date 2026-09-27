@@ -267,7 +267,7 @@ Max Plan 用户触发速率限制后一脸茫然。API 用户打开 Anthropic �
 
 Anthropic 没有公布 5 小时窗口的精确计算公式。让我们一起搞清楚。
 
-触发速率限制时，运行 `/report-limit`。你当前的使用数据会自动提交为 GitHub Discussion。收集的数据越多，公式就越清晰。
+运行 `/report-limit`——不需要先触发速率限制。它会把你过去 7 天里每个 5 小时窗口整理成预填好的 GitHub Discussion；检查后提交即可。`/report-limit blocked` 只发送你实际触发限制的那些窗口。收集的数据越多，公式就越清晰。
 
 ---
 

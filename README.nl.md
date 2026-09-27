@@ -278,7 +278,7 @@ Beweeg de muis over een stip om de werkelijke prompttekst, het aantal tokens en 
 
 Anthropic publiceert de exacte formule voor het 5-uursvenster niet. Laten we het samen uitzoeken.
 
-Wanneer je een snelheidslimiet bereikt, voer `/report-limit` uit. Je huidige gebruiksgegevens worden automatisch ingediend als GitHub Discussion. Hoe meer data we verzamelen, hoe duidelijker de formule wordt.
+Voer `/report-limit` uit — geen snelheidslimiet nodig. Het stuurt elk 5-uursvenster van je afgelopen 7 dagen als een vooraf ingevulde GitHub Discussion; controleer en dien in. `/report-limit blocked` stuurt alleen de vensters waarin je de limiet bereikte. Hoe meer data we verzamelen, hoe duidelijker de formule wordt.
 
 ---
 

@@ -271,7 +271,7 @@ Passe o mouse sobre qualquer ponto para ver o texto real do prompt, a contagem d
 
 A Anthropic não publica a fórmula exata para a janela de 5 horas. Vamos descobrir juntos.
 
-Quando você atingir um limite de taxa, execute `/report-limit`. Seus dados de uso atuais são enviados automaticamente como GitHub Discussion. Quanto mais dados coletarmos, mais clara a fórmula fica.
+Execute `/report-limit` — não é preciso atingir um limite de taxa. Ele envia cada janela de 5 horas dos seus últimos 7 dias como uma GitHub Discussion pré-preenchida; revise e envie. `/report-limit blocked` envia apenas as janelas em que você atingiu o limite. Quanto mais dados coletarmos, mais clara a fórmula fica.
 
 ---
 

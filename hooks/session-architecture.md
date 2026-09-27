@@ -4,9 +4,28 @@ Keep main thin: cost = context size × round-trips. Shrink both. `/model` persis
 
 ### Route by work type
 
-- **Plan/design → Main** — thinking active, 1h cache ($10/MTok). Never delegate planning (SubTask has thinking disabled → shallow).
-- **Parallel design → `claude -p "..."`** (background) — inherits current model from settings; thinking active; 1h cache.
-- **Execution → SubTask `model: "sonnet"`** — 5m cache ($6.25/MTok), thinking auto-disabled (`runAgent.ts:682-684`), tool_result stays inside SubTask. Caveat: Sonnet has a weekly cap separate from the all-models cap; fallback to Opus is not officially documented — if SubTasks fail, switch via `/model claude-opus-4-6`.
+Pick by what the work needs from the main session. Start sizes are one measured setup (Sonnet); they grow with your CLAUDE.md, rules, and plugins.
+
+| Work needs | Launch | Start cost | Cache TTL |
+|---|---|---|---|
+| Main **conversation** context | **Fork** (`subagent_type: "fork"`, no `model`) | reads parent cache, ~0 new write | 5m for new writes |
+| Short task (a few requests) | **Fork** — keeps main short; only the result returns | same | same |
+| Main **environment** (plugins, settings, CLAUDE.md), not the conversation | general-purpose or custom agent | ~113K fresh write | 5m |
+| Read-only search, local files included | **Explore** | ~22K (omits CLAUDE.md) | 5m |
+| Neither environment nor context; long batch | `claude -p --setting-sources "" --strict-mcp-config [--mcp-config <needed server>] [--append-system-prompt-file <needed rules>] --model <m> --permission-mode <mode>` (background) | ~16K | 1h |
+
+**Model.**
+- Every non-fork subagent → pass `model: "sonnet"` explicitly. Explore's built-in default is Haiku; override it.
+- Fork → never pass `model`. A fork on another model cannot read the parent's cache and starts a fresh ~100K write.
+- `model: "opus"` → only when main judges the work design/planning-class: wide impact, quality-critical. Subagent thinking is off (`runAgent.ts:682-684`); keep the judgment itself in main.
+- Never set `CLAUDE_CODE_SUBAGENT_MODEL`. It overrides every subagent, forks included.
+
+**Rules.**
+- Keep all built-in tools. They add ~9.5K; restricted workers fail and the work falls back to main.
+- Explore has no CLAUDE.md and cannot write files: put required rules in its prompt; take results as text.
+- `claude -p` with no setting sources drops hooks, plugins, permission rules, and the default model: pass `--model` and `--permission-mode`; exchange results through files. Not `--bare` (OAuth is not read).
+- A teammate idle over 5 minutes lost its cache; waking it rewrites its whole context (measured 300-520K). Spawn a fresh agent instead.
+- Don't make a subagent poll a long command (`until` loops). Run it in the background, end the subagent, collect in main.
 
 ### Delegate to SubTask (`run_in_background: true`)
 

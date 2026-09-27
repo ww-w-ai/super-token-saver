@@ -268,7 +268,7 @@ Layang-layangkan kursor ke mana-mana titik untuk melihat teks prompt sebenar, bi
 
 Anthropic tidak menerbitkan formula tepat untuk tetingkap 5 jam. Mari kita fikirkan bersama.
 
-Apabila anda mencapai had kadar, jalankan `/report-limit`. Data penggunaan semasa anda secara automatik diserahkan sebagai GitHub Discussion. Lebih banyak data yang kami kumpulkan, lebih jelas formulanya.
+Jalankan `/report-limit` — tidak perlu mencapai had kadar. Ia menghantar setiap tetingkap 5 jam dalam 7 hari terakhir anda sebagai GitHub Discussion yang telah diisi lebih dahulu; semak dan hantar. `/report-limit blocked` hanya menghantar tetingkap di mana anda mencapai had. Lebih banyak data yang kami kumpulkan, lebih jelas formulanya.
 
 ---
 

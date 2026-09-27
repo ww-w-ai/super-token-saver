@@ -169,5 +169,9 @@
   },
   "gitLite": {
     "tip": "팁: CC 기본 git 지시문은 세션당 ~2,200 tok + 호출당 ~1,700 tok를 소비합니다. `/setup-git-lite install`로 선별된 280-tok 최소본으로 교체하세요. `/setup-git-lite dismiss-banner`로 이 팁을 숨길 수 있습니다."
+  },
+  "accounts": {
+    "tab": "계정 {n}",
+    "current": "현재 로그인"
   }
 }

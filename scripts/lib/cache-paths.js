@@ -108,9 +108,31 @@ function projectNameFromCwd(cwd) {
  */
 function extractProjectName(filePath) {
   const normalized = filePath.replace(/\\/g, '/');
-  const parts = normalized.split('/projects/');
-  if (parts.length < 2) return null;
-  return parts[1].split('/')[0];
+  // Last `/projects/`: a config dir path may itself contain one.
+  const i = normalized.lastIndexOf('/projects/');
+  if (i < 0) return null;
+  return normalized.slice(i + '/projects/'.length).split('/')[0];
+}
+
+/**
+ * Cache id of a subagent transcript: its agent id, prefixed with the workflow dir for
+ * a Workflow agent. Workflow agents live one level deeper
+ * (`subagents/workflows/wf_x/agent-<id>.jsonl`) and their ids are not unique against
+ * the session's direct subagents — one session had both a direct and a Workflow
+ * `agent-ab251aea566938207`, and the second analyzed overwrote the first's cache.
+ * e.g. .../subagents/agent-a1.jsonl → a1; .../subagents/workflows/wf_x/agent-a1.jsonl → wf_x-a1
+ */
+function subagentIdFromPath(filePath) {
+  const normalized = filePath.replace(/\\/g, '/');
+  const base = path.basename(normalized, '.jsonl');
+  const agentId = base.startsWith('agent-') ? base.slice(6) : base;
+  const m = normalized.match(/\/subagents\/workflows\/([^/]+)\//);
+  return m ? m[1] + '-' + agentId : agentId;
+}
+
+/** Workflow run journals sit beside Workflow agents but carry no model usage. */
+function isWorkflowJournal(filePath) {
+  return /[/\\]subagents[/\\]workflows[/\\][^/\\]+[/\\]journal\.jsonl$/.test(filePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -502,6 +524,8 @@ module.exports = {
   migrateCodexSubdir,
   projectNameFromCwd,
   extractProjectName,
+  subagentIdFromPath,
+  isWorkflowJournal,
   getProjectDir,
   getSessionDir,
   getTimelinePath,

@@ -202,6 +202,19 @@ scripts/test-session-project-map.js
     project dirs because statusline-logger writes ratelimit.csv per cwd; only the
     transcript's project has timeline.csv)
 
+scripts/test-cross-session-dedup.js
+  → gates build-report's counting rule: one requestId counts once across all sessions
+    (resumed/forked sessions copy history with original requestIds), and rows before
+    the analyzer's cutoff are out of the period
+
+scripts/test-account-changes.js
+scripts/test-transcript-roots.js
+scripts/test-report-limit-range.js
+scripts/test-report-limit-exclusions.js
+scripts/test-workflow-agent-ids.js
+  → gates summary.accountChanges: login account per session read only from the
+    `session_context` attachment, stored as a 12-hex sha256 hash, one entry per change
+
 hooks/cache-expiry-check.sh
   → reads CC transcript JSONL directly (last assistant timestamp)
 

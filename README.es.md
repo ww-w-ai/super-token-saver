@@ -268,7 +268,7 @@ Pasa el cursor sobre cualquier punto para ver el texto real del prompt, el recue
 
 Anthropic no publica la fórmula exacta para la ventana de 5 horas. Vamos a descubrirla juntos.
 
-Cuando alcances un límite de velocidad, ejecuta `/report-limit`. Tus datos de uso actuales se envían automáticamente como GitHub Discussion. Cuantos más datos recopilemos, más clara será la fórmula.
+Ejecuta `/report-limit` — no necesitas alcanzar un límite de velocidad. Envía cada ventana de 5 horas de tus últimos 7 días como un GitHub Discussion prellenado; revísalo y envíalo. `/report-limit blocked` envía solo las ventanas en las que alcanzaste el límite. Cuantos más datos recopilemos, más clara será la fórmula.
 
 ---
 

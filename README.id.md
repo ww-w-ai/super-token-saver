@@ -268,7 +268,7 @@ Arahkan kursor ke titik manapun untuk melihat teks prompt sebenarnya, jumlah tok
 
 Anthropic tidak mempublikasikan formula tepat untuk jendela 5 jam. Mari kita cari tahu bersama.
 
-Saat Anda mencapai batas rate, jalankan `/report-limit`. Data penggunaan Anda saat ini secara otomatis dikirimkan sebagai GitHub Discussion. Semakin banyak data yang kami kumpulkan, semakin jelas formulanya.
+Jalankan `/report-limit` — tidak perlu mencapai batas rate. Ini mengirim setiap jendela 5 jam dari 7 hari terakhir Anda sebagai GitHub Discussion yang sudah terisi otomatis; tinjau lalu kirim. `/report-limit blocked` hanya mengirim jendela di mana Anda mencapai batas. Semakin banyak data yang kami kumpulkan, semakin jelas formulanya.
 
 ---
 

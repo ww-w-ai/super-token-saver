@@ -268,7 +268,7 @@ Survolez n'importe quel point pour voir le texte réel du prompt, le nombre de t
 
 Anthropic ne publie pas la formule exacte pour la fenêtre de 5 heures. Découvrons-la ensemble.
 
-Quand vous atteignez une limite de débit, exécutez `/report-limit`. Vos données d'utilisation actuelles sont automatiquement soumises comme GitHub Discussion. Plus nous collectons de données, plus la formule devient claire.
+Exécutez `/report-limit` — aucune limite de débit requise. Il envoie chaque fenêtre de 5 heures de vos 7 derniers jours sous forme de discussion GitHub pré-remplie ; vérifiez-la et envoyez-la. `/report-limit blocked` n'envoie que les fenêtres où vous avez atteint la limite. Plus nous collectons de données, plus la formule devient claire.
 
 ---
 

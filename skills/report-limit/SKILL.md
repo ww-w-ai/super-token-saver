@@ -1,7 +1,7 @@
 ---
 name: report-limit
-description: 'Max plan hit the wall? Report your 5h window data - we''re mapping the rate limit formula that is not published anywhere'
-when_to_use: Use when user hits a rate limit and wants to contribute data. Triggers on "report limit", "limit report", "rate limit report".
+description: 'Report your 5h and weekly limit data - we''re mapping the rate limit formula that is not published anywhere'
+when_to_use: Use when the user wants to contribute rate-limit data, hit a limit or not. Triggers on "report limit", "limit report", "rate limit report".
 host: claude-code
 ---
 
@@ -18,20 +18,22 @@ If the user provides "help" as argument, show usage summary and stop:
 ```
 /report-limit — Report your rate limit data
 
-Got rate limited? This skill automatically finds your blocked
-5-hour windows from cached timeline data and opens a pre-filled
-GitHub Discussion to ww-w-ai/super-token-saver.
+Help map the unpublished rate-limit formula. This skill collects
+your 5-hour windows from cached timeline data and opens a pre-filled
+GitHub Discussion to ww-w-ai/super-token-saver — no rate limit needed.
 
 No manual input needed. Just run it and confirm in your browser.
 
 Options:
-  (nothing)     Auto-detect and report all rate-limited windows
-  <date>        Report a specific date (e.g. /report-limit 2026-04-01)
+  (nothing)     Every 5h window of the last 7 days, limited or not
+  <date>        Every 5h window on that date (e.g. /report-limit 2026-04-01)
+  blocked       Only rate-limited windows, across all cached data
   help          Show this help
 
 Examples:
-  /report-limit              Report all rate-limited windows
-  /report-limit 2026-04-01   Report all 5h windows on April 1st
+  /report-limit              Last 7 days
+  /report-limit 2026-04-01   All 5h windows on April 1st
+  /report-limit blocked      Only the windows where you hit the limit
 ```
 
 Do not run any analysis. Just display the help text and stop.
@@ -60,13 +62,15 @@ Before running, ask the user's plan if not already known. The prompt message MUS
 
 Map user input to `--plan` values: 1=pro, 2=max100, 3=max200, 4=team, 5=team_premium, 6=enterprise, 7=bedrock, 8=foundry, 9=vertex
 
-Run the standalone script with `--plan` and optionally `--date`:
+Run the standalone script with `--plan` and at most one of `--date` / `--blocked`:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/report-limit.js --plan <plan> [--date <YYYY-MM-DD>]
+node ${CLAUDE_PLUGIN_ROOT}/scripts/report-limit.js --plan <plan> [--date <YYYY-MM-DD> | --blocked]
 ```
 
-If the user provided a date argument (e.g. `/report-limit 2026-04-01`), pass it as `--date 2026-04-01`. This reports ALL 5h windows for that date, not just rate-limited ones.
+- No argument → every 5h window of the last 7 days, rate-limited or not.
+- A date argument (e.g. `/report-limit 2026-04-01`) → pass `--date 2026-04-01`: every 5h window overlapping that date.
+- `blocked` (e.g. `/report-limit blocked`) → pass `--blocked`: only rate-limited windows, across all cached data.
 
 If the user doesn't know or skips plan, run without `--plan` (reports as "unknown").
 

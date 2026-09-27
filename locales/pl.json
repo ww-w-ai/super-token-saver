@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Wskazówka: Wbudowane instrukcje git w CC zużywają ~2 200 tok/sesję + ~1 700 tok/wywołanie. `/setup-git-lite install` zastępuje je wyselekcjonowanym minimum 280 tok. `/setup-git-lite dismiss-banner` ukrywa tę wskazówkę."
+  },
+  "accounts": {
+    "tab": "Konto {n}",
+    "current": "bieżące logowanie"
   }
 }

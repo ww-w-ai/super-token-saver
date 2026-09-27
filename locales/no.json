@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Tips: CCs innebygde git-instruksjoner bruker ~2 200 tok/økt + ~1 700 tok/kall. `/setup-git-lite install` erstatter dem med et kuratert minimum på 280 tok. `/setup-git-lite dismiss-banner` skjuler dette tipset."
+  },
+  "accounts": {
+    "tab": "Konto {n}",
+    "current": "nåværende pålogging"
   }
 }

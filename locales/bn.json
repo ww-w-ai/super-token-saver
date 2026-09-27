@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "টিপ: CC-এর বিল্ট-ইন git নির্দেশাবলী ~2,200 tok/সেশন + ~1,700 tok/কল খরচ করে। `/setup-git-lite install` সেগুলো 280-tok-এর একটি নির্বাচিত ন্যূনতমে প্রতিস্থাপন করে। `/setup-git-lite dismiss-banner` এই টিপটি লুকায়।"
+  },
+  "accounts": {
+    "tab": "অ্যাকাউন্ট {n}",
+    "current": "বর্তমান লগইন"
   }
 }

@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Tipp: Die integrierten git-Anweisungen von CC verbrauchen ~2.200 Tokens/Sitzung + ~1.700 Tokens/Aufruf. `/setup-git-lite install` ersetzt sie durch ein kuratiertes 280-Token-Minimum. `/setup-git-lite dismiss-banner` blendet diesen Tipp aus."
+  },
+  "accounts": {
+    "tab": "Konto {n}",
+    "current": "aktuelle Anmeldung"
   }
 }

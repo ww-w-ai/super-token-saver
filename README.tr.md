@@ -270,7 +270,7 @@ Gerçek prompt metnini, token sayısını ve tam maliyet dökümünü (Input/Out
 
 Anthropic, 5 saatlik pencere için tam formülü yayımlamıyor. Birlikte çözelim.
 
-Hız sınırına ulaştığınızda `/report-limit`'i çalıştırın. Mevcut kullanım verileriniz otomatik olarak bir GitHub Discussion olarak gönderilir. Ne kadar çok veri toplarsak, formül o kadar netleşir.
+`/report-limit`'i çalıştırın — hız sınırına ulaşmanıza gerek yok. Son 7 gününüzdeki her 5 saatlik pencereyi önceden doldurulmuş bir GitHub Discussion olarak gönderir; gözden geçirip gönderin. `/report-limit blocked`, yalnızca sınıra ulaştığınız pencereleri gönderir. Ne kadar çok veri toplarsak, formül o kadar netleşir.
 
 ---
 

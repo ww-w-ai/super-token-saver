@@ -274,7 +274,7 @@ Max-Plan-Nutzer erreichen das Rate-Limit und fragen sich warum. API-Nutzer öffn
 
 Anthropic veröffentlicht die genaue Formel für das 5-Stunden-Fenster nicht. Lass sie uns gemeinsam herausfinden.
 
-Wenn du ein Rate-Limit erreichst, führe `/report-limit` aus. Deine aktuellen Nutzungsdaten werden automatisch als GitHub-Discussion eingereicht. Je mehr Daten wir sammeln, desto klarer wird die Formel.
+Führe `/report-limit` aus — kein Rate-Limit nötig. Es sendet jedes 5-Stunden-Fenster deiner letzten 7 Tage als vorausgefüllte GitHub-Discussion; überprüfe sie und reiche sie ein. `/report-limit blocked` sendet nur die Fenster, in denen du das Limit erreicht hast. Je mehr Daten wir sammeln, desto klarer wird die Formel.
 
 ---
 

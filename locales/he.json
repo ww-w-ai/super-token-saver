@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "טיפ: הנחיות git המובנות של CC צורכות ~2,200 tok/סשן + ~1,700 tok/קריאה. `/setup-git-lite install` מחליף אותן במינימום נבחר של 280 tok. `/setup-git-lite dismiss-banner` מסתיר טיפ זה."
+  },
+  "accounts": {
+    "tab": "חשבון {n}",
+    "current": "ההתחברות הנוכחית"
   }
 }

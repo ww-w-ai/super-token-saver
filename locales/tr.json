@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "İpucu: CC'nin yerleşik git talimatları oturum başına ~2.200 tok + çağrı başına ~1.700 tok tüketir. `/setup-git-lite install` bunları özenle seçilmiş 280-tok minimum ile değiştirir. `/setup-git-lite dismiss-banner` bu ipucunu gizler."
+  },
+  "accounts": {
+    "tab": "Hesap {n}",
+    "current": "geçerli oturum"
   }
 }

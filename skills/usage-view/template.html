@@ -59,6 +59,28 @@
     white-space: nowrap;
   }
 
+  .account-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: -8px 0 24px;
+  }
+  .account-tabs button {
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+  .account-tabs button[aria-selected="true"] {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+  }
+  .account-tabs .tab-cost { color: var(--accent-orange); margin-left: 6px; }
+
   .plan-badge .plan-label {
     color: var(--text-muted);
     margin-right: 4px;
@@ -661,6 +683,8 @@
     <div id="planBadge" class="plan-badge" style="display:none"></div>
   </header>
 
+  <nav id="accountTabs" class="account-tabs" role="tablist" style="display:none"></nav>
+
   <div class="summary-bar">
     <div class="summary-card">
       <div class="label">Analysis Period</div>
@@ -1211,6 +1235,39 @@ function i18nT(template, vars) {
   if (!template) return '';
   return template.replace(/\{(\w+)\}/g, function(_, k) { return vars[k] !== undefined ? vars[k] : '{' + k + '}'; });
 }
+
+// ─── Account tabs: one report per login account ──────────────
+// REPORT_DATA.accountList exists only when two or more accounts were used.
+// Switching sets #account=<hash> and reloads, so every chart renders fresh.
+(function renderAccountTabs() {
+  var list = REPORT_DATA.accountList;
+  var nav = document.getElementById('accountTabs');
+  if (!list || list.length < 2 || !nav) return;
+  var t = I18N.accounts || {};
+  list.forEach(function (a, i) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', String(a.id === REPORT_DATA.account));
+    btn.title = a.id;
+    btn.textContent = (t.tab || 'Account {n}').replace('{n}', i + 1)
+      + (a.current ? ' (' + (t.current || 'current login') + ')' : '');
+    var cost = document.createElement('span');
+    cost.className = 'tab-cost';
+    // Codex has no per-token cost, so its tabs show each account's token total instead.
+    cost.textContent = (REPORT_DATA.summary && REPORT_DATA.summary.hasCostData === false)
+      ? (a.tokens != null ? Number(a.tokens).toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 }) : 'N/A')
+      : '$' + Number(a.cost).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    btn.appendChild(cost);
+    btn.addEventListener('click', function () {
+      if (a.id === REPORT_DATA.account) return;
+      location.hash = a.current ? '' : 'account=' + a.id;
+      location.reload();
+    });
+    nav.appendChild(btn);
+  });
+  nav.style.display = '';
+})();
 
 // ─── Apply I18N to static HTML ───────────────────────────────
 (function applyI18N() {

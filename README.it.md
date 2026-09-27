@@ -268,7 +268,7 @@ Passa il mouse su qualsiasi punto per vedere il testo effettivo del prompt, il c
 
 Anthropic non pubblica la formula esatta per la finestra di 5 ore. Scopriamola insieme.
 
-Quando raggiungi un limite di frequenza, esegui `/report-limit`. I tuoi dati di utilizzo attuali vengono inviati automaticamente come GitHub Discussion. Più dati raccogliamo, più chiara diventa la formula.
+Esegui `/report-limit` — non serve raggiungere un limite di frequenza. Invia ogni finestra di 5 ore degli ultimi 7 giorni come discussione GitHub precompilata; controllala e invia. `/report-limit blocked` invia solo le finestre in cui hai raggiunto il limite. Più dati raccogliamo, più chiara diventa la formula.
 
 ---
 

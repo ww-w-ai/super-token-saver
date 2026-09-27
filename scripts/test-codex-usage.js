@@ -77,12 +77,12 @@ function assertCodexDashboardParity(reportData) {
   );
   check("normal delta is total-minus-baseline, componentwise", r.delta, { input_tokens: 500, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 50, reasoning_output_tokens: 0, total_tokens: 550 });
 
-  // -- component decrease -> reset + zero -----------------------------------
+  // -- component decrease -> reset, counted like a first row ----------------
   r = t.ingest(
     { input_tokens: 1000, cached_input_tokens: 200, cache_write_input_tokens: 0, output_tokens: 200, reasoning_output_tokens: 10, total_tokens: 1410 }, // input_tokens dropped 1500->1000
     { input_tokens: 100, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 50, reasoning_output_tokens: 0, total_tokens: 150 },
   );
-  check("any component decrease resets baseline and emits zero", r.delta, { input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0, total_tokens: 0 });
+  check("any component decrease resets baseline and counts the row as min(last, total)", r.delta, { input_tokens: 100, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 50, reasoning_output_tokens: 0, total_tokens: 150 });
   check("decrease is diagnosed as counter_reset", r.diagnostic, "counter_reset");
   check("decrease flags baselineReset", r.baselineReset, true);
 
@@ -587,7 +587,8 @@ check("re-normalization writes the current format version", stamp.version, 4);
 // D. End-to-end: analyze-usage.js --host codex
 // ===========================================================================
 
-const sess2Meta = { session_id: "cccc0002-0000-4000-8000-000000000002", id: "cccc0002-0000-4000-8000-000000000002", cwd: workCwd, timestamp: "2026-01-01T02:00:00.000Z", thread_source: "user" };
+const codexAccountId = "Acct0000-aaaa-4bbb-8ccc-dddddddddddd";
+const sess2Meta = { session_id: "cccc0002-0000-4000-8000-000000000002", id: "cccc0002-0000-4000-8000-000000000002", cwd: workCwd, timestamp: "2026-01-01T02:00:00.000Z", thread_source: "user", creator_account_id: codexAccountId };
 const sess2Body = [
   turnContext("gpt-5.6-sol", "2026-01-01T02:00:01Z"),
   msg("user", "another session, same rate-limit window", "2026-01-01T02:00:02Z"),
@@ -603,9 +604,16 @@ const sess2Body = [
 writeRollout("rollout-2.jsonl", sess2Meta, sess2Body);
 
 const env = { ...process.env, CODEX_HOME: codexHome, HOME: fakeHome };
-const analyzeOut = JSON.parse(execFileSync("node", [path.join(__dirname, "analyze-usage.js"), "--host", "codex", "--days", "all"], { encoding: "utf8", env }));
+const analyzeRaw = execFileSync("node", [path.join(__dirname, "analyze-usage.js"), "--host", "codex", "--days", "all"], { encoding: "utf8", env });
+const analyzeOut = JSON.parse(analyzeRaw);
 
 check("both Codex sessions are picked up", analyzeOut.sessions.length, 2);
+// Codex CLI 0.157+ writes the login account into session_meta; it feeds the same per-account tabs as Claude Code.
+const codexAccountHash = require("crypto").createHash("sha256").update(codexAccountId.toLowerCase()).digest("hex").slice(0, 12);
+check("session_meta.creator_account_id becomes a hashed accountChanges entry",
+  analyzeOut.sessions.find((s) => s.sessionId === sess2Meta.id).accountChanges, [{ ts: sess2Meta.timestamp, account: codexAccountHash }]);
+check("a rollout without creator_account_id records no account", analyzeOut.sessions.find((s) => s.sessionId === sess1Meta.id).accountChanges, []);
+check("the raw Codex account id never reaches the output", analyzeRaw.toLowerCase().includes(codexAccountId.toLowerCase()), false);
 const s1Out = analyzeOut.sessions.find((s) => s.sessionId === sess1Meta.id);
 check("session totals sum authoritative per-row totals (1100 + 550)", s1Out.tokensCodex.total, 1650);
 check("primaryModel reflects the LAST-seen model when counts tie (prospective, not majority-only)", s1Out.model === "gpt-5.6-sol" || s1Out.model === "gpt-5.6-sol-mini", true);
@@ -660,6 +668,19 @@ for (const marker of ['id="calendarGrid"', 'id="donutChart"', 'function renderCo
   check(`Codex report is the real dashboard template (has ${marker})`, html.includes(marker), true);
 }
 check("REPORT_DATA carries the Codex host flag for the template's own JS to branch on", exportedReportData.host, "codex");
+check("one Codex login account means no account tabs", exportedReportData.accountList, undefined);
+
+// Two Codex login accounts: one tab each, and each tab holds only its own sessions' tokens.
+const otherAccountHash = "0123456789ab";
+const twoAccounts = JSON.parse(JSON.stringify(analyzeOut2));
+twoAccounts.sessions.find((s) => s.sessionId === sess1Meta.id).accountChanges = [{ ts: sess1Meta.timestamp, account: otherAccountHash }];
+const twoAccountsFile = path.join(tmp, "results-two-accounts.json");
+fs.writeFileSync(twoAccountsFile, JSON.stringify(twoAccounts));
+execFileSync("node", [path.join(__dirname, "build-report.js"), "--host", "codex", "--data", twoAccountsFile, "--export-data", path.join(tmp, "report-two-accounts.json"), "--output", path.join(tmp, "report-two-accounts.html")], { encoding: "utf8", env });
+const twoReport = JSON.parse(fs.readFileSync(path.join(tmp, "report-two-accounts.json"), "utf8"));
+check("two Codex accounts produce two tabs, the latest login first, labeled with tokens", (twoReport.accountList || []).map((a) => [a.id, a.current, a.tokens]), [[codexAccountHash, true, 330], [otherAccountHash, false, 1650]]);
+check("each Codex account tab holds only its own sessions' tokens (330 / 1650)",
+  [twoReport.summary.totalUsageTokens, twoReport.otherAccounts && twoReport.otherAccounts[otherAccountHash] && twoReport.otherAccounts[otherAccountHash].summary.totalUsageTokens], [330, 1650]);
 check("REPORT_DATA marks cost as unavailable, not zero", [exportedReportData.summary.hasCostData, exportedReportData.summary.costKnownUSD], [false, null]);
 check("Codex exports a full AI-analysis prompt instead of forcing no-ai", [codexAiPrompt.includes("## Codex Usage Data"), codexAiPrompt.includes("## Hourly Token Pattern"), codexAiPrompt.includes("## Context Size Distribution")], [true, true, true]);
 check("Codex AI prompt does not reuse Claude dollar/cache-write claims", [codexAiPrompt.includes("Total cost: $"), codexAiPrompt.includes("Opus cache write is the most expensive")], [false, false]);

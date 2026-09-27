@@ -268,7 +268,7 @@ Max Plan users rate limit पर hit होते हैं और wonder कर
 
 Anthropic 5-hour window का exact formula publish नहीं करता। आइए मिलकर पता लगाएं।
 
-जब आप rate limit hit करें, `/report-limit` run करें। आपका current usage data automatically GitHub Discussion के रूप में submit हो जाता है। जितना ज़्यादा data हम collect करेंगे, formula उतना ज़्यादा clear होगा।
+`/report-limit` run करें — rate limit hit करने की ज़रूरत नहीं। यह आपके पिछले 7 दिनों की हर 5-घंटे की window को एक pre-filled GitHub Discussion के रूप में भेजता है; उसे review करके submit करें। `/report-limit blocked` सिर्फ वो windows भेजता है जहाँ आपने limit hit किया था। जितना ज़्यादा data हम collect करेंगे, formula उतना ज़्यादा clear होगा।
 
 ---
 

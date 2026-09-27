@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Petua: Arahan git terbina dalam CC menggunakan ~2,200 tok/sesi + ~1,700 tok/panggilan. `/setup-git-lite install` menggantikannya dengan minimum 280-tok yang dikurasi. `/setup-git-lite dismiss-banner` menyembunyikan petua ini."
+  },
+  "accounts": {
+    "tab": "Akaun {n}",
+    "current": "log masuk semasa"
   }
 }

@@ -23,6 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { CODEX_BASE, projectNameFromCwd } = require("./cache-paths");
+const { accountHash } = require("./accounts");
 
 // Codex resolves its own state directory through CODEX_HOME, so honour it —
 // a non-default Codex home would otherwise be invisible to this tool.
@@ -48,6 +49,9 @@ const INDEX_PATH = path.join(NORMALIZED_ROOT, "index.json");
 // SendMessage/teammate-message/task-notification records. A v3 file has none
 // of these rows, so it must be rewritten too.
 const NORMALIZED_FORMAT_VERSION = 4;
+// The session index caches readSessionMeta()'s result, so it versions with that shape,
+// not with the normalized files. v5 adds `account`.
+const INDEX_VERSION = 5;
 
 // Outgoing tool calls that dispatch or message another agent. Matched against
 // the tool's base name once a known namespace prefix is stripped — Codex has
@@ -150,6 +154,8 @@ function readSessionMeta(filePath) {
       threadId: p.session_id || p.id || null,
       cwd: p.cwd || null,
       started: p.timestamp || row.timestamp || null,
+      // Hashed like Claude Code's account; the raw id is never kept. Absent before CLI 0.157.
+      account: p.creator_account_id ? accountHash(p.creator_account_id) : null,
       isSubagent: p.thread_source === "subagent" || !!spawn,
       agent: spawn
         ? { nickname: spawn.agent_nickname || null, role: spawn.agent_role || null, path: spawn.agent_path || null }
@@ -165,7 +171,7 @@ function readSessionMeta(filePath) {
 function loadIndex() {
   try {
     const data = JSON.parse(fs.readFileSync(INDEX_PATH, "utf8"));
-    if (data.version === NORMALIZED_FORMAT_VERSION && data.entries) return data.entries;
+    if (data.version === INDEX_VERSION && data.entries) return data.entries;
   } catch {}
   return {};
 }
@@ -173,7 +179,7 @@ function loadIndex() {
 function saveIndex(entries) {
   try {
     fs.mkdirSync(NORMALIZED_ROOT, { recursive: true });
-    fs.writeFileSync(INDEX_PATH, JSON.stringify({ version: NORMALIZED_FORMAT_VERSION, entries }));
+    fs.writeFileSync(INDEX_PATH, JSON.stringify({ version: INDEX_VERSION, entries }));
   } catch {}
 }
 
@@ -371,6 +377,43 @@ function resolveCodexSource(file) {
   throw new Error(`Original Codex rollout unavailable for ${abs}`);
 }
 
+/**
+ * Call fn(line) for every line of a file, without holding the whole file in memory.
+ * A rollout can exceed V8's maximum string length (~512 MB), so it is read in chunks
+ * and split on the newline byte, which never occurs inside a UTF-8 multibyte character.
+ * Lines match String#split("\n") minus the empty element after a trailing newline.
+ */
+function forEachLine(filePath, fn, chunkBytes = 8 << 20) {
+  const fd = fs.openSync(filePath, "r");
+  const buf = Buffer.allocUnsafe(chunkBytes);
+  let pending = [];
+  try {
+    for (;;) {
+      const n = fs.readSync(fd, buf, 0, buf.length, null);
+      if (n === 0) break;
+      let start = 0;
+      for (let nl = buf.indexOf(10, 0); nl !== -1 && nl < n; nl = buf.indexOf(10, start)) {
+        pending.push(buf.subarray(start, nl));
+        fn(Buffer.concat(pending).toString("utf8"));
+        pending = [];
+        start = nl + 1;
+      }
+      if (start < n) pending.push(Buffer.from(buf.subarray(start, n)));
+    }
+    if (pending.length) fn(Buffer.concat(pending).toString("utf8"));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function normalizeLine(line, meta) {
+  if (!line.trim()) return SKIP_LINE;
+  let row;
+  try { row = JSON.parse(line); } catch { return SKIP_LINE; }
+  const translated = translateRow(row, meta);
+  return translated ? JSON.stringify(translated) : SKIP_LINE;
+}
+
 function normalizeCodexTranscript(srcPath, meta) {
   const resolved = meta || readSessionMeta(srcPath);
   if (!resolved) throw new Error(`Not a Codex transcript: ${srcPath}`);
@@ -391,24 +434,20 @@ function normalizeCodexTranscript(srcPath, meta) {
         && destStat.mtimeMs >= srcStat.mtimeMs) return dest;
   } catch {}
 
-  const raw = fs.readFileSync(srcPath, "utf8");
-  const lines = raw.split("\n");
-  // A trailing newline yields one empty final element; dropping it keeps the
-  // line count equal to the source's real line count.
-  if (lines.length && lines[lines.length - 1] === "") lines.pop();
-
-  const out = new Array(lines.length);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim()) { out[i] = SKIP_LINE; continue; }
-    let row;
-    try { row = JSON.parse(line); } catch { out[i] = SKIP_LINE; continue; }
-    const translated = translateRow(row, resolved);
-    out[i] = translated ? JSON.stringify(translated) : SKIP_LINE;
-  }
-
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.writeFileSync(dest, out.join("\n") + "\n");
+  const tmp = dest + ".tmp";
+  const outFd = fs.openSync(tmp, "w");
+  try {
+    let written = 0;
+    forEachLine(srcPath, (line) => {
+      fs.writeSync(outFd, normalizeLine(line, resolved) + "\n");
+      written++;
+    });
+    if (written === 0) fs.writeSync(outFd, "\n");
+  } finally {
+    fs.closeSync(outFd);
+  }
+  fs.renameSync(tmp, dest);
   fs.writeFileSync(metaPath, JSON.stringify({ version: NORMALIZED_FORMAT_VERSION,
     source: path.resolve(srcPath), sourceSize: srcStat.size, sourceMtimeMs: srcStat.mtimeMs }));
   return dest;
@@ -422,4 +461,5 @@ module.exports = {
   normalizeCodexTranscript,
   resolveCodexSource,
   normalizedPathFor,
+  forEachLine,
 };

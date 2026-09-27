@@ -163,5 +163,9 @@
   },
   "gitLite": {
     "tip": "Tips: CC:s inbyggda git-instruktioner förbrukar ~2 200 tok/session + ~1 700 tok/anrop. `/setup-git-lite install` ersätter dem med ett kurerat minimum på 280 tok. `/setup-git-lite dismiss-banner` döljer detta tips."
+  },
+  "accounts": {
+    "tab": "Konto {n}",
+    "current": "nuvarande inloggning"
   }
 }
