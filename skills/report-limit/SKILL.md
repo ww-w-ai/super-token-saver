@@ -111,7 +111,7 @@ The script outputs JSON to stdout. Parse the result and show the user a brief su
 |---------|--------|------|----------|
 | {account or "-"} | {date} {start}-{end} | ${cost} | {n} |
 
-(Codex: columns Account | Limit (`limitId lane`) | Window (start → activeEnd) | Used % (usedFirst → usedLast) | Requests. No cost: Codex has no per-token price.)
+(Codex: add Limit (`limitId lane`) and Used % (`usedFirst → usedLast`) columns; Window is start → activeEnd; Cost is N/A — Codex has no per-token price.)
 
 {If gistUrl: "📎 Data uploaded: {gistUrl}"}
 {If no gistUrl: "⚠️ GitHub CLI not authenticated. Run `gh auth login` first, or manually attach the zip file."}

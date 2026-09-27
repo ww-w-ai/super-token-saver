@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.2] - 2026-09-28
+
+### Changed: the Codex `/report-limit` is the Claude Code report
+
+- The Codex report had its own thin table and one merged requests file. It now uses the Claude
+  Code report's code: the same window table (Duration, Reqs, Sessions, Peak Concurrent,
+  Max Ctx/Session, Output, Cache Write, Cache Read, Models) plus Limit and Used % columns, and one
+  `window-<limit>-<lane>-<date>-<time>.csv` per window with the Claude Code columns. Cost reads
+  N/A: Codex has no per-token price. The shared code is `scripts/lib/report-window.js`.
+- Both hosts' tables gain an Input column. Codex sends 70–90M uncached input tokens in a 7-day
+  window, so tokens per percent cannot be read without it.
+- `ratelimit.csv` (Codex) keeps a sample only where the used % rises. Concurrent sessions report
+  stale values, and the file showed 1% → 0% → 1%.
+
 ## [3.7.1] - 2026-09-28
 
 ### Added: `/report-limit` on Codex

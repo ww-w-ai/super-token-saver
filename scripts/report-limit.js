@@ -30,12 +30,12 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { buildGlobalTsMapper, assignWindows, FIVE_HOURS_S } = require('./lib/window-utils');
-const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentTimelinePath, getRatelimitPath, getSummaryPath, hashId, CACHE_BASE: CACHE_DIR, migrateFromYYMM } = require('./lib/cache-paths');
+const { listProjects, listSessions, listSubagents, getTimelinePath, getSubagentTimelinePath, getRatelimitPath, getSummaryPath, CACHE_BASE: CACHE_DIR, migrateFromYYMM } = require('./lib/cache-paths');
 const { dropReplayedRequests } = require('./lib/request-dedup');
 const { loadAccountIndex, accountOf, listAccounts } = require('./lib/accounts');
 const { PLAN_INFO, VALID_PLANS } = require('./lib/plan-info');
-const { fmtTokens, fmtDate, fmtTime } = require('./lib/format');
 const { log, makeReportDir, accountHeading, toolVersion, publishReport } = require('./lib/report-publish');
+const { summarizeWindow, buildWindowTable, writeWindowFiles, isGistFile, roundCost } = require('./lib/report-window');
 
 const SCRIPTS_DIR = __dirname;
 
@@ -216,94 +216,6 @@ function loadAccountRows(keep, start, end) {
   return { rows, tagFile };
 }
 
-/** Usage totals and rate-limit metrics of one window's kept rows. */
-function summarizeWindow(winStart, winEnd, kept, tagFile, hasUnknown) {
-  const touchedFiles = { timeline: new Set(kept.map(r => tagFile.get(r.tag))) };
-  const windowSessions = new Set(kept.map(r => r.tag));
-  let sumInput = 0, sumOutput = 0, sumCacheWrite = 0, sumCacheRead = 0;
-  const rows = kept.map(r => {
-    sumInput += Number(r.cols[2]) || 0;
-    sumOutput += Number(r.cols[7]) || 0;
-    sumCacheWrite += Number(r.cols[3]) || 0; // cc is the total; cc5m/cc1h are its split
-    sumCacheRead += Number(r.cols[6]) || 0;
-    return [...r.cols, r.tag].join(',');
-  });
-
-  const startD = new Date(winStart * 1000);
-  const endD = new Date(winEnd * 1000);
-  const totalCost = rows.reduce((s, r) => s + Number(r.split(',')[8]), 0);
-
-  const parsedRows = rows.map(r => {
-    const c = r.split(',');
-    return {
-      ts: Number(c[0]), model: c[1], input: Number(c[2]) || 0,
-      cc: Number(c[3]) || 0, cc5m: Number(c[4]) || 0, cc1h: Number(c[5]) || 0,
-      cr: Number(c[6]) || 0, out: Number(c[7]) || 0, cost: Number(c[8]) || 0,
-      rl: c[10] || '', session: c[c.length - 1],
-    };
-  });
-
-  // Max concurrent sessions (distinct sessions in same second)
-  const tsSessions = new Map();
-  for (const r of parsedRows) {
-    if (!tsSessions.has(r.ts)) tsSessions.set(r.ts, new Set());
-    tsSessions.get(r.ts).add(r.session);
-  }
-  const maxConcurrent = Math.max(...[...tsSessions.values()].map(s => s.size));
-
-  // Per-session cache read max (peak context size)
-  const sessionCrMax = new Map();
-  for (const r of parsedRows) {
-    const prev = sessionCrMax.get(r.session) || 0;
-    if (r.cr > prev) sessionCrMax.set(r.session, r.cr);
-  }
-  const maxCrPerSession = Math.max(...sessionCrMax.values(), 0);
-
-  // Cumulative totals at limit_hit (sum up to and including last row)
-  let cumInput = 0, cumOutput = 0, cumCc5m = 0, cumCc1h = 0, cumCr = 0, cumCost = 0;
-  for (const r of parsedRows) {
-    cumInput += r.input; cumOutput += r.out;
-    cumCc5m += r.cc5m; cumCc1h += r.cc1h;
-    cumCr += r.cr; cumCost += r.cost;
-  }
-
-  // Active duration (first row to last row)
-  const firstTs = parsedRows.length > 0 ? parsedRows[0].ts : winStart;
-  const lastTs = parsedRows.length > 0 ? parsedRows[parsedRows.length - 1].ts : winEnd;
-  const activeDurationMin = Math.round((lastTs - firstTs) / 60);
-
-  const modelsUsed = [...new Set(parsedRows.map(r => r.model).filter(Boolean))];
-
-  return {
-    winTs: String(winStart),
-    winStart,
-    winEnd,
-    date: fmtDate(startD),
-    start: fmtTime(startD),
-    end: fmtTime(endD),
-    sessions: windowSessions.size,
-    sessionTags: windowSessions,
-    requests: rows.length,
-    cost: Math.round(totalCost * 100) / 100,
-    input: sumInput,
-    output: sumOutput,
-    cacheWrite: sumCacheWrite,
-    cacheRead: sumCacheRead,
-    metrics: {
-      maxConcurrentSessions: maxConcurrent,
-      maxCrPerSession,
-      cumInput, cumOutput, cumCc5m, cumCc1h, cumCr,
-      cumCost: Math.round(cumCost * 100) / 100,
-      activeDurationMin,
-      modelsUsed,
-    },
-    csvHeader: 'ts,model,input,cc,cc5m,cc1h,cr,out,cost,win,rl,evt,line,req,session',
-    csvRows: rows,
-    touchedFiles,
-    hasUnknown,
-  };
-}
-
 /**
  * The account's /usage snapshots in [start, end). Concurrent sessions record the same
  * snapshots, so rows are merged, sorted, and kept only where the 5h or 7d % changes.
@@ -419,55 +331,7 @@ const results = sections.flatMap(s => s.results);
 // ── Step 5: Build session index & write per-window CSV files ────
 const reportDir = makeReportDir();
 
-// Session and model numbers (sequential, 1-based) are shared by all accounts' files.
-const sessionIndex = new Map();
-const modelIndex = new Map();
-let sessionCounter = 0;
-let modelCounter = 0;
-
-for (const w of results) {
-  for (const row of w.csvRows) {
-    const cols = row.split(',');
-    const sessionId = cols[cols.length - 1];
-    if (!sessionIndex.has(sessionId)) sessionIndex.set(sessionId, ++sessionCounter);
-    const model = cols[1];
-    if (model && !modelIndex.has(model)) modelIndex.set(model, ++modelCounter);
-  }
-}
-
-// Write sessions.csv with hashed IDs and project column
-let sessionsCsv = 'num,id,project,type,parent\n';
-for (const [sid, num] of sessionIndex) {
-  const type = sid.startsWith('agent-') ? 'agent' : 'main';
-  const parentSid = sessionParent.get(sid) || '';
-  const parentNum = parentSid ? String(sessionIndex.get(parentSid) || '') : '';
-  const proj = sessionProjectMap.get(sid) || '_unknown';
-  sessionsCsv += num + ',' + hashId(sid) + ',' + hashId(proj) + ',' + type + ',' + parentNum + '\n';
-}
-fs.writeFileSync(path.join(reportDir, 'sessions.csv'), sessionsCsv);
-
-// Write models.csv
-let modelsCsv = 'num,model\n';
-for (const [model, num] of modelIndex) {
-  modelsCsv += num + ',' + model + '\n';
-}
-fs.writeFileSync(path.join(reportDir, 'models.csv'), modelsCsv);
-
-// Write per-window CSV files with numeric session and model IDs
-for (const section of sections) {
-  for (const w of section.results) {
-    const mappedRows = w.csvRows.map(row => {
-      const cols = row.split(',');
-      const sessionId = cols[cols.length - 1];
-      cols[cols.length - 1] = String(sessionIndex.get(sessionId) || 0);
-      cols[1] = String(modelIndex.get(cols[1]) || 0);
-      return cols.join(',');
-    });
-    const csvContent = w.csvHeader + '\n' + mappedRows.join('\n') + '\n';
-    const fileName = section.filePrefix + 'window-' + w.date + '-' + w.start.replace(':', '') + '.csv';
-    fs.writeFileSync(path.join(reportDir, fileName), csvContent);
-  }
-}
+writeWindowFiles(reportDir, sections, { sessionProjectMap, sessionParent });
 
 // ── Step 6: Copy relevant timeline and ratelimit CSVs ───────────
 // NOTE: timeline.csv copy is legacy (zip-only, not uploaded to gist).
@@ -488,7 +352,6 @@ for (const section of sections) {
 }
 
 // ── Step 9: Discussion title and window tables ──
-const roundCost = (n) => Math.round(n * 100) / 100;
 const totalCostAll = roundCost(results.reduce((s, w) => s + w.cost, 0));
 const today = new Date();
 const dateStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
@@ -498,42 +361,6 @@ const title = '\u{1F480} Rate Limit Report (' + results.length + ' window' + (re
   + (sections.length > 1 ? ', ' + sections.length + ' accounts' : '') + ') \u2014 $' + totalCostAll;
 
 // Discussion body — one window table (usage + metrics) per account
-function buildWindowTable(results) {
-  const totalCost = roundCost(results.reduce((s, w) => s + w.cost, 0));
-  const totalRequests = results.reduce((s, w) => s + w.requests, 0);
-  const totalSessions = new Set(results.flatMap(w => [...w.sessionTags])).size;
-  const totalOutput = results.reduce((s, w) => s + w.output, 0);
-  const totalCacheRead = results.reduce((s, w) => s + w.cacheRead, 0);
-  let table = '| Window | Duration | Cost | Reqs | Sessions | Peak Concurrent | Max Ctx/Session | Output | Cache Write (5m/1h) | Cache Read | Models |\n'
-    + '|--------|----------|------|------|----------|-----------------|-----------------|--------|---------------------|------------|--------|\n';
-  for (const w of results) {
-    const m = w.metrics;
-    table += '| ' + w.date + ' ' + w.start + '-' + w.end
-      + ' | ' + m.activeDurationMin + 'min'
-      + ' | $' + w.cost
-      + ' | ' + w.requests
-      + ' | ' + w.sessions
-      + ' | ' + m.maxConcurrentSessions
-      + ' | ' + fmtTokens(m.maxCrPerSession)
-      + ' | ' + fmtTokens(w.output)
-      + ' | ' + fmtTokens(m.cumCc5m) + ' / ' + fmtTokens(m.cumCc1h)
-      + ' | ' + fmtTokens(w.cacheRead)
-      + ' | ' + m.modelsUsed.length
-      + ' |\n';
-  }
-  table += '| **Total** | '
-    + ' | **$' + totalCost
-    + '** | **' + totalRequests
-    + '** | **' + totalSessions
-    + '** | '
-    + ' | '
-    + ' | **' + fmtTokens(totalOutput)
-    + '** | '
-    + ' | **' + fmtTokens(totalCacheRead)
-    + '** | |\n';
-  return table;
-}
-
 const planLabel = plan ? PLAN_INFO[plan].label : 'unknown';
 const unknownNote = results.some(w => w.hasUnknown)
   ? '\n\n> **Note:** Some rows contain `limit_hit_unknown` — the rate limit type could not be classified. Most likely 5h window limits, but may be weekly. Data is scoped to 5h windows regardless.'
@@ -544,7 +371,7 @@ publishReport({
   reportDir,
   dryRun,
   title,
-  isGistFile: (f) => /^(account\d+-)?(window-.+|ratelimit)\.csv$/.test(f) || f === 'sessions.csv' || f === 'models.csv',
+  isGistFile,
   buildBody: (rawDataLine) => '## Rate Limit Data Point\n\n'
     + sections.map(s => (s.label ? '### ' + accountHeading(s.label) + '\n\n' : '') + buildWindowTable(s.results)).join('\n') + '\n'
     + '## Raw Data\n'
