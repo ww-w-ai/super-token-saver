@@ -251,6 +251,8 @@ Arahkan kursor ke titik manapun untuk melihat teks prompt sebenarnya, jumlah tok
 
 **Bagikan.** Seluruh dasbor adalah satu file HTML mandiri — semua data tertanam, tidak perlu server. Kirim ke tim, manajer, atau akuntan Anda. Tidak ada dependensi eksternal. Bekerja offline. Gunakan mode `private` untuk menghapus semua teks prompt sebelum berbagi — analitik biaya tetap utuh sementara konten percakapan dihapus.
 
+**Setiap akun, setiap permintaan dihitung satu kali.** Batas laju terikat pada satu akun login, jadi akun tidak pernah tercampur: dengan dua login atau lebih tercatat, dasbor menampilkan satu tab per akun, login saat ini di urutan pertama. Sesi yang dilanjutkan atau di-fork menyalin permintaan sebelumnya ke file baru; setiap permintaan tetap dihitung satu kali. Setiap folder konfigurasi Claude Code dibaca — `~/.claude`, `$CLAUDE_CONFIG_DIR`, dan folder mana pun yang Anda daftarkan di `SUPER_TOKEN_SAVER_CONFIG_DIRS` (dipisahkan dengan `:`, atau `;` di Windows).
+
 ```
 /usage-view                  # Semua waktu, semua proyek
 /usage-view current          # Hanya jendela 5 jam saat ini

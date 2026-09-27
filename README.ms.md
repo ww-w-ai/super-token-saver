@@ -251,6 +251,8 @@ Layang-layangkan kursor ke mana-mana titik untuk melihat teks prompt sebenar, bi
 
 **Kongsikan.** Keseluruhan papan pemuka adalah satu fail HTML kendiri — semua data tertanam, tiada pelayan diperlukan. Hantar kepada pasukan, pengurus, atau akauntan anda. Tanpa kebergantungan luaran. Berfungsi luar talian. Gunakan mod `private` untuk memadam semua teks prompt sebelum berkongsi — analitik kos kekal utuh sementara kandungan perbualan dibuang.
 
+**Setiap akaun, setiap permintaan dikira sekali.** Had kadar dimiliki oleh akaun log masuk, jadi akaun tidak pernah bercampur: dengan dua log masuk atau lebih dalam rekod, papan pemuka memaparkan satu tab bagi setiap akaun, log masuk semasa dahulu. Sesi yang disambung semula atau bercabang menyalin permintaan terdahulu ke fail baharu; setiap permintaan masih dikira sekali. Setiap folder konfigurasi Claude Code dibaca — `~/.claude`, `$CLAUDE_CONFIG_DIR`, dan mana-mana folder yang anda senaraikan dalam `SUPER_TOKEN_SAVER_CONFIG_DIRS` (dipisahkan dengan `:`, atau `;` pada Windows).
+
 ```
 /usage-view                  # Semua masa, semua projek
 /usage-view current          # Hanya tetingkap 5 jam semasa

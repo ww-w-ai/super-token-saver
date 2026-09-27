@@ -14,6 +14,7 @@ Codex 는 모든 세션을 `~/.codex/sessions/` 에 기록한다. Claude Code �
 |---|---|
 | `s-continue` | 이전 Claude Code **또는** Codex 세션을 복원한다 — 목록에서 고르거나, 바로 마지막 세션으로 간다. |
 | `s-compact` | 클리어하기 전에 인계 기록을 남긴다 — 전사에는 남지 않는 것들: 서브에이전트가 찾아낸 것, 도구 출력의 수치, 폐기한 접근법. |
+| `usage-view` | Codex 사용량이 어디로 갔는지 본다 — rollout에서 만든, AI 분석이 담긴 인터랙티브 HTML 대시보드. |
 
 인계 기록은 도구별이 아니라 프로젝트별로 저장된다. Codex 에서 스프린트를 마치고 Claude Code 에서 이어받아도, 그 파일은 이미 거기 있다. 반대로 돌아와도 마찬가지다. 두 도구의 기록을 함께 복원하는 플러그인은 이것뿐이라, 한쪽 예산이 바닥나면 다른 쪽에서 그 자리부터 이어 가면 된다.
 
@@ -50,7 +51,17 @@ codex plugin marketplace upgrade ww-w-ai
 /s-continue codex     목록을 Codex 세션으로 제한한다
 /s-continue codex : rust migration      주제와 일치하는 턴을 전체 복원한다
 /s-compact            다음 사람을 위한 인계 기록을 남긴다
+/usage-view           지난 한 달 사용량 대시보드
+/usage-view last 7 days
 ```
+
+## 사용량 대시보드
+
+`/usage-view`는 Codex 자체 수치로 Claude Code와 같은 대시보드를 만든다. Codex 구독은 토큰이 아니라 구매한 크레딧으로 청구되므로, 달러 청구액이 아니라 토큰과 그 크레딧 환산값을 함께 보여준다. 캘린더는 5시간을 가정하는 대신 Codex가 보고하는 요율 한도 윈도우를 따른다.
+
+- **로그인 계정마다 탭 하나.** Codex CLI 0.157 이상은 각 rollout에 로그인 계정을 기록한다. 계정이 두 개 이상 기록돼 있으면 각각 자기 탭을 갖고, 토큰 합계로 라벨이 붙는다. 계정은 짧은 단방향 해시로 저장되며, id 자체는 저장하지 않는다.
+- **호출마다 한 번만 집계.** 포크는 부모의 이력을 복사하지 않고 가리키기만 하고, 부모의 누적치는 자신의 서브에이전트를 빼므로 어느 것도 두 번 합산되지 않는다. Codex의 토큰 카운터가 재시작된 뒤의 호출도 집계된다.
+- **크기와 무관한 rollout.** rollout을 한 줄씩 읽으므로, 수백 메가바이트짜리 파일도 대시보드나 `/s-continue`를 멈추지 않는다.
 
 ## 압축 뒤에는 시키지 않아도 되살린다
 
@@ -69,7 +80,7 @@ codex plugin marketplace upgrade ww-w-ai
 
 ## 이 플러그인이 하지 않는 것
 
-`usage-view` 는 Codex 세션도 읽는다. Codex 구독은 토큰이 아니라 구매한 크레딧으로 청구되므로, 달러 청구액이 아니라 그 세션이 쓴 크레딧 환산값을 보여준다. `report-limit` 은 아직 Claude Code 전용이다 — Codex 도 롤아웃에 요율 한도를 그대로 남기므로, 못 하는 것이 아니라 아직 포팅하지 않은 것이다. `setup-statusline` 은 사정이 다르다. Codex 에는 이미 자체 상태줄이 있고 `config.toml` 의 `status_line` 으로 설정한다.
+`report-limit` 은 아직 Claude Code 전용이다 — Codex 도 롤아웃에 요율 한도를 그대로 남기므로, 못 하는 것이 아니라 아직 포팅하지 않은 것이다. `setup-statusline` 은 사정이 다르다. Codex 에는 이미 자체 상태줄이 있고 `config.toml` 의 `status_line` 으로 설정한다.
 
 ## 라이선스
 

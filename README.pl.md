@@ -260,6 +260,8 @@ Najedź na dowolną kropkę, aby zobaczyć rzeczywisty tekst promptu, liczbę to
 
 **Udostępnij to.** Cały panel to jeden samodzielny plik HTML — wszystkie dane wbudowane, serwer nie jest potrzebny. Wyślij do swojego zespołu, menedżera lub księgowego. Brak zewnętrznych zależności. Działa offline. Użyj trybu `private`, aby usunąć cały tekst promptu przed udostępnieniem — zachowuje analizy kosztów przy usuwaniu treści rozmowy.
 
+**Każde konto, każde żądanie liczone raz.** Limity częstotliwości należą do konta logowania, więc konta nigdy nie są mieszane: przy dwóch lub więcej zarejestrowanych logowaniach panel pokazuje jedną kartę na konto, z bieżącym logowaniem na pierwszym miejscu. Wznowiona lub rozgałęziona sesja kopiuje wcześniejsze żądania do nowego pliku; każde żądanie nadal jest liczone tylko raz. Odczytywany jest każdy folder konfiguracyjny Claude Code — `~/.claude`, `$CLAUDE_CONFIG_DIR` oraz dowolne foldery wymienione w `SUPER_TOKEN_SAVER_CONFIG_DIRS` (oddzielone `:`, lub `;` w systemie Windows).
+
 ```
 /usage-view                  # Cały czas, wszystkie projekty
 /usage-view current          # Tylko bieżące okno 5-godzinne

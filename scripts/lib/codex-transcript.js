@@ -435,7 +435,7 @@ function normalizeCodexTranscript(srcPath, meta) {
   } catch {}
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  const tmp = dest + ".tmp";
+  const tmp = `${dest}.${process.pid}.tmp`;
   const outFd = fs.openSync(tmp, "w");
   try {
     let written = 0;

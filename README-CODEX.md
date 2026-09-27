@@ -14,6 +14,7 @@ Codex writes every session to `~/.codex/sessions/`. Claude Code writes every ses
 |---|---|
 | `s-continue` | Restore a previous Claude Code **or** Codex session — pick from a list, or jump straight to the last one. |
 | `s-compact` | Write a handoff before you clear, capturing what the transcript cannot hold: subagent findings, tool-output numbers, killed approaches. |
+| `usage-view` | See where your Codex usage went: an interactive HTML dashboard with an AI analysis, built from your rollouts. |
 
 The handoff is stored per project, not per tool. End a sprint in Codex, pick it up in Claude Code, and the file is already there. Go back the other way and it still is. No other plugin restores both tools' history, so when one side runs out of budget the other picks up from the same line.
 
@@ -50,7 +51,17 @@ codex plugin marketplace upgrade ww-w-ai
 /s-continue codex     restrict the list to Codex sessions
 /s-continue codex : rust migration      restore the turns that match a topic, in full
 /s-compact            write the handoff for whoever comes next
+/usage-view           usage dashboard for the last month
+/usage-view last 7 days
 ```
+
+## Usage dashboard
+
+`/usage-view` builds the same dashboard Claude Code gets, from Codex's own numbers. A Codex subscription bills in purchased credits rather than per token, so it reports tokens and their credit equivalent, not a dollar bill. The calendar follows the rate-limit windows Codex reports instead of assuming five hours.
+
+- **One tab per login account.** Codex CLI 0.157 and later record the login account in each rollout. With two or more accounts on record, each gets its own tab, labeled with its token total. The account is stored as a short one-way hash, never the id itself.
+- **Every call counted once.** Forks point at their parent's history instead of copying it, and a parent's running total leaves out its subagents, so nothing is summed twice. A call that follows a restart of Codex's token counter is counted too.
+- **Rollouts of any size.** A rollout is read line by line, so a file of several hundred megabytes does not stop the dashboard or `/s-continue`.
 
 ## Restored after compaction, without being asked
 
@@ -69,7 +80,7 @@ The skill names are the same on both hosts, so a command you learn in one works 
 
 ## What it does not do
 
-`usage-view` reads Codex sessions. Because a Codex subscription bills in purchased credits rather than per token, it reports the credit equivalent of what a session used, not a dollar bill. `report-limit` is Claude Code only for now — Codex records its rate limit in the rollout outright, so that one is a port that has not happened yet, not a limitation. `setup-statusline` is a different case: Codex already has its own status line, configured through `status_line` in `config.toml`.
+`report-limit` is Claude Code only for now — Codex records its rate limit in the rollout outright, so that one is a port that has not happened yet, not a limitation. `setup-statusline` is a different case: Codex already has its own status line, configured through `status_line` in `config.toml`.
 
 ## License
 

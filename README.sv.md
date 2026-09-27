@@ -260,6 +260,8 @@ Hovra över en punkt för att se den faktiska prompttexten, tokenantal och fulls
 
 **Dela det.** Hela instrumentpanelen är en enda fristående HTML-fil — alla data inbäddade, ingen server behövs. Skicka det till ditt team, din chef eller din revisor. Inga externa beroenden. Fungerar offline. Använd `private`-läge för att ta bort all prompttext innan delning — bevarar kostnadsanalytiken samtidigt som samtalsinnehållet tas bort.
 
+**Varje konto, varje förfrågan räknas en gång.** Hastighetsgränser tillhör ett inloggningskonto, så konton blandas aldrig: med två eller fler inloggningar registrerade visar instrumentpanelen en flik per konto, med den aktuella inloggningen först. En återupptagen eller förgrenad session kopierar tidigare förfrågningar till en ny fil; varje förfrågan räknas ändå bara en gång. Varje Claude Code-konfigurationsmapp läses — `~/.claude`, `$CLAUDE_CONFIG_DIR`, och alla mappar du listar i `SUPER_TOKEN_SAVER_CONFIG_DIRS` (avgränsade med `:`, eller `;` i Windows).
+
 ```
 /usage-view                  # All tid, alla projekt
 /usage-view current          # Enbart aktuellt 5-timmarsfönster

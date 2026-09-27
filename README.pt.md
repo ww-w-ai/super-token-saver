@@ -254,6 +254,8 @@ Passe o mouse sobre qualquer ponto para ver o texto real do prompt, a contagem d
 
 **Compartilhe.** O painel inteiro é um único arquivo HTML autônomo — todos os dados incorporados, sem necessidade de servidor. Envie para sua equipe, seu gerente ou seu contador. Sem dependências externas. Funciona offline. Use o modo `private` para remover todo o texto dos prompts antes de compartilhar — mantém a análise de custos intacta enquanto remove o conteúdo da conversa.
 
+**Cada conta, cada requisição contada uma única vez.** Os limites de taxa pertencem a uma conta de login, então as contas nunca se misturam: com dois ou mais logins registrados, o painel mostra uma aba por conta, com o login atual primeiro. Uma sessão retomada ou bifurcada copia requisições anteriores para um novo arquivo; cada requisição ainda é contada uma única vez. Cada pasta de configuração do Claude Code é lida — `~/.claude`, `$CLAUDE_CONFIG_DIR` e quaisquer pastas listadas em `SUPER_TOKEN_SAVER_CONFIG_DIRS` (separadas por `:`, ou `;` no Windows).
+
 ```
 /usage-view                  # Todo o tempo, todos os projetos
 /usage-view current          # Apenas a janela atual de 5 horas

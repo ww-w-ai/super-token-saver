@@ -251,6 +251,8 @@ Survolez n'importe quel point pour voir le texte réel du prompt, le nombre de t
 
 **Partagez-le.** Le tableau de bord entier est un unique fichier HTML autonome — toutes les données intégrées, pas de serveur nécessaire. Envoyez-le à votre équipe, votre responsable ou votre comptable. Aucune dépendance externe. Fonctionne hors ligne. Utilisez le mode `private` pour supprimer tout le texte des prompts avant de partager — conserve l'analyse des coûts intacte tout en supprimant le contenu des conversations.
 
+**Chaque compte, chaque requête comptée une seule fois.** Les limites de débit appartiennent à un compte de connexion, donc les comptes ne sont jamais mélangés : avec deux connexions enregistrées ou plus, le tableau de bord affiche un onglet par compte, la connexion actuelle en premier. Une session reprise ou bifurquée copie les requêtes antérieures dans un nouveau fichier ; chaque requête reste comptée une seule fois. Chaque dossier de configuration Claude Code est lu — `~/.claude`, `$CLAUDE_CONFIG_DIR`, et tout dossier que vous listez dans `SUPER_TOKEN_SAVER_CONFIG_DIRS` (séparés par `:`, ou `;` sous Windows).
+
 ```
 /usage-view                  # Tout le temps, tous les projets
 /usage-view current          # Fenêtre actuelle de 5 heures uniquement

@@ -1,9 +1,7 @@
 # Codex port backlog — the rest of the dual-host surface
 
-`s-continue` and `s-compact` ship to both hosts. The three remaining skills do not, and one of
-those three is a deliberate stop rather than a task. Written 2026-08-25.
-
-Related: `docs/RENAME-super-token-saver.md` (the rename these ports should land around).
+`s-continue`, `s-compact` and `usage-view` ship to both hosts. The two remaining skills do not,
+and one of them is a deliberate stop rather than a task.
 
 ## What Codex actually records
 
@@ -30,18 +28,11 @@ also carries `cwd`, `approval_policy` and `sandbox_policy`.
 window from token counts and pricing; Codex states the used percentage and the reset instant
 outright.
 
-## 1. `usage-view` → Codex (port)
+## 1. `usage-view` → Codex (shipped in 3.3.0)
 
-The data is there, so the work is in the seams, not the collection.
-
-| Seam | What has to change |
-|---|---|
-| Source | `analyze-usage.js` walks `~/.claude/projects/`. Codex rows live in one global tree and are scoped by `session_meta.cwd` — `scripts/lib/codex-transcript.js` already resolves exactly that; reuse it rather than writing a second scanner. |
-| Row shape | `token_count` is a running total per turn, and `last_token_usage` is the delta. Decide which one the timeline consumes and say so, or the chart double-counts. |
-| Cache-write split | Claude Code separates 5-minute and 1-hour cache writes because they are priced differently. Codex emits one `cache_write_input_tokens`. The dashboard's cache-cost column has no Codex equivalent and must be absent, not zero. |
-| Reasoning tokens | `reasoning_output_tokens` has no Claude Code counterpart. Either surface it as its own series or fold it into output — do not silently drop it. |
-| Pricing | `scripts/model-pricing.json` holds Anthropic rates only. OpenAI rates and their model ids (`gpt-5.6-sol`, …) are a new section, and `pricing.js` already warns on unknown models — that warning is the acceptance signal. |
-| Windows | See below. |
+The timeline consumes running-total deltas (`createSessionUsageTracker` in `scripts/lib/codex-usage.js`), cost is
+reported as a purchased-credit equivalent, and the window length is data, not a constant. The
+rules live in `CLAUDE.md` under the dual-host skills.
 
 ## 2. `report-limit` → Codex (port)
 
@@ -91,10 +82,3 @@ arbitrary command; nothing found so far says Codex will run one.
    rather than leaving the question open.
 
 Do this research BEFORE promising a Codex status line anywhere user-visible.
-
-## Ordering
-
-Both ports change `analyze-usage.js` and the pricing table, so run them as one piece of work rather
-than two. Neither blocks the rename, but the skill names change in the rename — port against the
-NEW names (`s-continue`/`s-compact` are renamed; these three keep theirs) so the work is not done
-twice.

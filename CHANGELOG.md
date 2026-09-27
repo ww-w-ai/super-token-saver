@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Limits and 5-hour windows are per account, so accounts are no longer mixed. With two or more
   login accounts on record, `/usage-view` shows a tab per account with its cost; each tab is a
   full report of that account's rows only. The current login's tab opens first and carries the AI
-  analysis. Rows with no account record belong to the current login.
+  analysis. Rows with no account record belong to the current login. Each tab's 5-hour windows
+  come from that account's own reset times, so two accounts' overlapping windows no longer merge
+  into one span longer than five hours.
 - `build-report.js --account <hash>` builds one account's report.
 
 ### Changed: `/report-limit` sends every recent window by default

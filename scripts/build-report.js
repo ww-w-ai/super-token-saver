@@ -1595,7 +1595,11 @@ if (isCodex) {
     }
   }
 } else {
-  const { tsToWindow } = buildGlobalTsMapper();
+  // Window boundaries come from this report's account only; another account's resets would
+  // merge overlapping windows into one span longer than five hours.
+  const { tsToWindow } = buildGlobalTsMapper(accountIndex.filtering
+    ? (sid, ts) => (accountAt(accountIndex, sid, ts) || accountIndex.current) === reportAccount
+    : undefined);
   for (const [, rows] of allTimelines) {
     for (const row of rows) {
       const ts = typeof row.ts === 'number' ? row.ts : Math.floor(new Date(row.ts).getTime() / 1000);

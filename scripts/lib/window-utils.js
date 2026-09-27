@@ -16,9 +16,11 @@ const FIVE_HOURS_S = 5 * 3600;
  * Scan ratelimit CSVs for 5h_reset values and derive window starts.
  * Uses new project/session cache structure.
  * @param {string} cacheBase - Path to cache base directory (e.g. ~/.claude/super-token-saver-data) — kept for API compat
+ * @param {(sessionId: string, tsSec: number) => boolean} [keepRow] - Limits the scan to one login
+ *   account: reset times are per account, and two accounts' windows overlap into one merged span.
  * @returns {number[]} Array of unique window start timestamps
  */
-function scanRatelimitWindows(cacheBase) {
+function scanRatelimitWindows(cacheBase, keepRow) {
   const windowStarts = new Set();
   try {
     const projects = listProjects();
@@ -31,6 +33,7 @@ function scanRatelimitWindows(cacheBase) {
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(',');
           const resetTs = cols[2] ? Number(cols[2]) : 0;
+          if (keepRow && !keepRow(sess, Number(cols[0]))) continue;
           if (resetTs > 0) {
             windowStarts.add(resetTs - FIVE_HOURS_S);
           }
@@ -180,9 +183,10 @@ function buildGlobalWindowMap() {
  * compares raw ts (second precision) against merged ratelimit windows.
  *
  * Returns: { tsToWindow(ts) -> windowStart|null, windows: [{start,end}] }
+ * @param {(sessionId: string, tsSec: number) => boolean} [keepRow] see scanRatelimitWindows
  */
-function buildGlobalTsMapper() {
-  const rlStarts = scanRatelimitWindows();
+function buildGlobalTsMapper(keepRow) {
+  const rlStarts = scanRatelimitWindows(undefined, keepRow);
   const windows = mergeWindows(rlStarts, FIVE_HOURS_S);
   function tsToWindow(ts) {
     for (const w of windows) {

@@ -95,11 +95,11 @@ let totalFail = 0;
 for (const [report, account] of checks) {
   if (checks.length > 1) console.log(`\n##### Account ${account} #####`);
   const rows = SOURCE.index.filtering ? SOURCE.rows.filter((r) => r.account === account) : SOURCE.rows;
-  totalFail += checkReport(report, rows.map((r) => ({ ...r })));
+  totalFail += checkReport(report, rows.map((r) => ({ ...r })), account);
 }
 process.exit(totalFail === 0 ? 0 : 1);
 
-function checkReport(REPORT, allRows) {
+function checkReport(REPORT, allRows, account) {
 
 // Filter to report's date range
 if (REPORT.summary && REPORT.summary.dateFrom) {
@@ -120,7 +120,10 @@ if (REPORT.summary && REPORT.summary.dateFrom) {
   }
   console.log(`Date filter ${REPORT.summary.dateFrom}~${REPORT.summary.dateTo}: ${before} -> ${allRows.length} rows`);
 }
-const { tsToWindow } = buildGlobalTsMapper();
+// Same rule as the report: window boundaries come from this account's ratelimit rows only.
+const { tsToWindow } = buildGlobalTsMapper(SOURCE.index.filtering
+  ? (sid, ts) => (accountAt(SOURCE.index, sid, ts) || SOURCE.index.current) === account
+  : undefined);
 
 // Apply same fallback grouping logic as build-report.js
 const uncovered = [];

@@ -14,6 +14,7 @@ Codex 把每个会话写入 `~/.codex/sessions/`。Claude Code 把每个会话�
 |---|---|
 | `s-continue` | 恢复此前的 Claude Code **或** Codex 会话——从列表中选择,或直接跳到最近一次。 |
 | `s-compact` | 在清空上下文前写交接记录,保存转写记录留不住的内容:子代理的发现、工具输出中的数字、被放弃的方案。 |
+| `usage-view` | 查看你的 Codex 用量都花在了哪里:基于 rollout 生成、带 AI 分析的交互式 HTML 仪表盘。 |
 
 交接文件按项目保存,而不是按工具保存。在 Codex 里结束一个冲刺,再到 Claude Code 里接着做,文件已经在那里等着。反过来回到 Codex 也一样。能同时恢复两个工具历史的插件只有这一个,所以一边的额度用完,就在另一边从同一行接着做。
 
@@ -50,7 +51,17 @@ codex plugin marketplace upgrade ww-w-ai
 /s-continue codex     只列出 Codex 会话
 /s-continue codex : rust migration      恢复匹配该主题的对话轮次,取全文
 /s-compact            为下一个接手的人写交接记录
+/usage-view           最近一个月的用量仪表盘
+/usage-view last 7 days
 ```
+
+## 用量仪表盘
+
+`/usage-view` 用 Codex 自身的数据构建与 Claude Code 相同的仪表盘。Codex 订阅按购买的额度计费而非按 token 计费,因此它显示的是 token 及其额度换算值,而不是账单金额。日历遵循 Codex 报告的速率限制窗口,而不是假定为 5 小时。
+
+- **每个登录账号一个标签页。** Codex CLI 0.157 及更高版本会在每个 rollout 中记录登录账号。记录中有两个或更多账号时,每个账号都有自己的标签页,并以其 token 总量标注。账号以短哈希单向存储,绝不存储 id 本身。
+- **每次调用只计一次。** 分叉指向父会话的历史而不是复制它,父会话的累计值也不包含其子代理,因此不会重复计入。Codex 的 token 计数器重启后的调用同样会被计入。
+- **不限大小的 rollout。** rollout 按行读取,因此几百兆的文件也不会拖慢仪表盘或 `/s-continue`。
 
 ## 压缩之后,不用开口就恢复
 
@@ -68,7 +79,7 @@ rollout 的 `L{n}` 标记。
 
 ## 这个插件不做什么
 
-`usage-view` 也能读取 Codex 会话。由于 Codex 订阅按购买的额度计费而非按 token 计费,它显示的是该会话所用额度的换算值,而不是账单金额。`report-limit` 目前仅支持 Claude Code —— Codex 同样会在 rollout 中直接给出速率限制,所以这只是尚未移植,而非做不到。`setup-statusline` 情况不同:Codex 本身已有状态栏,通过 `config.toml` 中的 `status_line` 配置。
+`report-limit` 目前仅支持 Claude Code —— Codex 同样会在 rollout 中直接给出速率限制,所以这只是尚未移植,而非做不到。`setup-statusline` 情况不同:Codex 本身已有状态栏,通过 `config.toml` 中的 `status_line` 配置。
 
 ## 许可证
 

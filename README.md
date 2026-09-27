@@ -255,6 +255,8 @@ Hover any dot for the actual prompt text, the token count, and the full cost bre
 
 **Share it.** The whole dashboard is one self-contained HTML file. All the data is embedded, so there's no server. Send it to your team, your manager, or your accountant. No external dependencies, works offline. Use `private` mode to strip the prompt text before sharing. The cost analytics stay, the conversation content goes.
 
+**Every account, every request counted once.** Rate limits belong to a login account, so accounts are never mixed: with two or more logins on record, the dashboard shows one tab per account, the current login first. A resumed or forked session copies earlier requests into a new file; each request is still counted once. Every Claude Code config folder is read — `~/.claude`, `$CLAUDE_CONFIG_DIR`, and any folders you list in `SUPER_TOKEN_SAVER_CONFIG_DIRS` (separated by `:`, or `;` on Windows).
+
 ```
 /usage-view                  # All time, all projects
 /usage-view current          # Current 5-hour window only

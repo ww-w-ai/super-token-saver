@@ -40,6 +40,9 @@ output line per input line**, and everything downstream runs unchanged.
   never return `codex`. The one-time move of pre-split entries is `migrateCodexSubdir()` (it
   runs while `.codex-normalized` still exists at the root). Gate: `node scripts/test-cache-host-split.js`.
 - Gate: `node scripts/test-codex-adapter.js` — synthetic fixture, no real transcript needed.
+- **Never read a whole Codex rollout into one string.** A rollout can pass V8's max string length
+  (~512 MB; a 694 MB one was measured) and the throw stops usage-view and restoration alike. Use
+  `forEachLine()` in `codex-transcript.js`; its chunk-boundary cases are in the adapter test.
 - **The Claude path is byte-identical** and must stay so; `preprocess.js` only changes its footer
   when `--original` is passed. Verify by diffing against `git show main:scripts/preprocess.js`.
 
@@ -214,6 +217,10 @@ scripts/test-report-limit-exclusions.js
 scripts/test-workflow-agent-ids.js
   → gates summary.accountChanges: login account per session read only from the
     `session_context` attachment, stored as a 12-hex sha256 hash, one entry per change
+
+scripts/test-window-account.js
+  → gates per-account 5h windows: an account's tab takes window boundaries from its own
+    ratelimit rows only; another account's overlapping resets would merge them past 5 hours
 
 hooks/cache-expiry-check.sh
   → reads CC transcript JSONL directly (last assistant timestamp)

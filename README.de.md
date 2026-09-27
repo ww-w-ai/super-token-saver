@@ -257,6 +257,8 @@ Max-Plan-Nutzer erreichen das Rate-Limit und fragen sich warum. API-Nutzer öffn
 
 **Teilen.** Das gesamte Dashboard ist eine einzelne selbstständige HTML-Datei — alle Daten eingebettet, kein Server nötig. An dein Team, deinen Manager oder deinen Buchhalter schicken. Keine externen Abhängigkeiten. Funktioniert offline. `private`-Modus nutzen, um alle Prompt-Texte vor dem Teilen zu entfernen — Kostenanalyse bleibt intakt, Gesprächsinhalte werden entfernt.
 
+**Jeder Account, jede Anfrage nur einmal gezählt.** Rate-Limits gehören zu einem Login-Account, daher werden Accounts nie vermischt: Bei zwei oder mehr erfassten Logins zeigt das Dashboard einen Tab pro Account, der aktuelle Login zuerst. Eine fortgesetzte oder abgezweigte Session kopiert frühere Anfragen in eine neue Datei; jede Anfrage wird trotzdem nur einmal gezählt. Jeder Claude-Code-Konfigurationsordner wird gelesen — `~/.claude`, `$CLAUDE_CONFIG_DIR` und alle Ordner, die du in `SUPER_TOKEN_SAVER_CONFIG_DIRS` aufführst (getrennt durch `:`, unter Windows durch `;`).
+
 ```
 /usage-view                  # Alle Zeit, alle Projekte
 /usage-view current          # Nur aktuelles 5-Stunden-Fenster
