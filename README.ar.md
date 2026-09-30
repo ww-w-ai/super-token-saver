@@ -579,6 +579,8 @@ super-token-saver مفتوح المصدر بالكامل (Apache-2.0). JavaScrip
 - [دليل كاش الطلبات](guides/prompt-cache-guide.md) — لماذا معظم تكلفتك في الكاش، كيف يعمل التخزين المؤقت عبر المزوّدين (Anthropic، OpenAI، Gemini)، وكيف تديره ([한국어](guides/prompt-cache-guide-ko.md) · [日本語](guides/prompt-cache-guide-ja.md) · [中文](guides/prompt-cache-guide-zh.md) · [Español](guides/prompt-cache-guide-es.md) · [Français](guides/prompt-cache-guide-fr.md) · [Deutsch](guides/prompt-cache-guide-de.md) · [+16 languages](guides/))
 - [تحليل تكلفة Fable 5.1 مقابل Opus 5](guides/fable-5-1-vs-opus-5-cost-analysis.md) — أرخص بنسبة 24–38% على الأقل من Opus 5 عند نفس الجودة، عبر 2,782 جلسة
 - [تحليل تكلفة Fable 5.1 مقابل Opus 5 (한국어)](guides/fable-5-1-vs-opus-5-cost-analysis.ko.md)
+- [حد كلود الأسبوعي تغيّر كما أُعلن](guides/weekly-limit-vs-5h-window.md) — خمسة أشهر من بيانات شريط حالة Claude Code تمت مقارنتها بكل إعلان رسمي: منذ مايو انخفض الحد الأسبوعي مرة واحدة فقط، في 9/14، بالضبط بنسبة 17% المُعلنة. لماذا لا يزال يبدو أصغر، بالإضافة إلى كل إعادة ضبط في 2026
+- [حد كلود الأسبوعي تغيّر كما أُعلن (한국어)](guides/weekly-limit-vs-5h-window.ko.md)
 - [تحليل تكلفة Opus 4.7 مقابل 4.6](guides/opus-4-7-vs-4-6-cost-analysis.md) — مقارنة التكلفة جنباً إلى جنب عبر 8,563 استدعاء API
 - [تحليل تكلفة Opus 4.7 مقابل 4.6 (한국어)](guides/opus-4-7-vs-4-6-cost-analysis.ko.md)
 

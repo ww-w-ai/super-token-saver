@@ -103,6 +103,8 @@ written right now instead of whichever transcript happens to be newest. `--sourc
 (default for this skill), `claude`, or `codex`. Pass `codex` or `claude` when
 the user named one tool. Codex keeps every session in one global tree, so `--cwd` is what scopes them
 to this project; Codex subagent rollouts are excluded, the same way Claude subtask transcripts are.
+Non-interactive one-shot runs are excluded too: `claude -p` (`entrypoint: "sdk-cli"`) and
+`codex exec` / SDK runs (`session_meta` source `"exec"`). The running session is always kept.
 
 Each result carries `source` (`claude` | `codex`) and, for Codex, `originalPath` (the rollout the
 line numbers belong to) alongside `path` (the normalized copy the other scripts read).

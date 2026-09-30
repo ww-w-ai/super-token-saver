@@ -578,6 +578,8 @@ super-token-saver 完全开源（Apache-2.0）。纯 JavaScript + Bash——无�
 - [提示缓存指南](guides/prompt-cache-guide.md) — 为什么你的大部分成本都来自缓存，缓存如何在各提供商（Anthropic、OpenAI、Gemini）间运作，以及如何管理它（[한국어](guides/prompt-cache-guide-ko.md) · [日本語](guides/prompt-cache-guide-ja.md) · [中文](guides/prompt-cache-guide-zh.md) · [Español](guides/prompt-cache-guide-es.md) · [Français](guides/prompt-cache-guide-fr.md) · [Deutsch](guides/prompt-cache-guide-de.md) · [+16 种语言](guides/)）
 - [Fable 5.1 vs Opus 5 成本分析](guides/fable-5-1-vs-opus-5-cost-analysis.md) — 同等质量下比 Opus 5 至少便宜 24–38%，基于 2,782 个会话
 - [Fable 5.1 vs Opus 5 成本分析 （한국어）](guides/fable-5-1-vs-opus-5-cost-analysis.ko.md)
+- [Claude 的每周限额按公告如期变化](guides/weekly-limit-vs-5h-window.md) — 对五个月的 Claude Code 状态栏数据与每次官方公告逐一核对：自5月以来，每周限额只下降过一次，就在9/14，降幅正好是公告的17%。为什么感觉上仍然变小了，以及2026年的每一次重置
+- [Claude 的每周限额按公告如期变化 （한국어）](guides/weekly-limit-vs-5h-window.ko.md)
 - [Opus 4.7 vs 4.6 成本分析](guides/opus-4-7-vs-4-6-cost-analysis.md) — 8,563 次 API 调用的并排成本比较
 - [Opus 4.7 vs 4.6 成本分析（한국어）](guides/opus-4-7-vs-4-6-cost-analysis.ko.md)
 

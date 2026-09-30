@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.5] - 2026-09-30
+
+### Fixed: `/s-continue` no longer lists one-shot non-interactive runs
+
+- Sessions an AI launched and finished in one call filled the pick list ahead of the sessions a
+  person opened. They are now left out on both hosts: Claude Code sessions whose rows carry
+  `entrypoint: "sdk-cli"` (`claude -p`), and Codex rollouts whose
+  `session_meta.payload.source` is `"exec"` (`codex exec`, SDK runs). Checked against 5,548 real
+  Codex sessions.
+- The running session is never left out, even when it is one of these runs.
+- Filtering happens before `--offset`/`--limit`, so pages do not shrink.
+- Each result carries `nonInteractive`. The Codex session index moves to version 6 and is rebuilt
+  once.
+- Gate: `node scripts/test-list-sessions-nonint.js`.
+
+### Added
+
+- Research guide: [Claude's weekly limit moved as announced](guides/weekly-limit-vs-5h-window.md)
+  ([한국어](guides/weekly-limit-vs-5h-window.ko.md)), linked from every README.
+
 ## [3.7.4] - 2026-09-28
 
 ### Fixed: `/usage-view` splits a window a reset coupon cut short

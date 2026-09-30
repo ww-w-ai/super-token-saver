@@ -579,6 +579,8 @@ Opus মূল্যে ($0.50/MTok cache read), এটি **প্রতি API
 - [Prompt Cache Guide](guides/prompt-cache-guide.md) — আপনার বেশিরভাগ খরচ কেন cache, providers (Anthropic, OpenAI, Gemini) জুড়ে caching কীভাবে কাজ করে, এবং কীভাবে manage করবেন ([한국어](guides/prompt-cache-guide-ko.md) · [日本語](guides/prompt-cache-guide-ja.md) · [中文](guides/prompt-cache-guide-zh.md) · [Español](guides/prompt-cache-guide-es.md) · [Français](guides/prompt-cache-guide-fr.md) · [Deutsch](guides/prompt-cache-guide-de.md) · [+16 languages](guides/))
 - [Fable 5.1 vs Opus 5 Cost Analysis](guides/fable-5-1-vs-opus-5-cost-analysis.md) — একই quality-তে Opus 5-এর চেয়ে অন্তত ২৪–৩৮% সস্তা, ২,৭৮২ session জুড়ে
 - [Fable 5.1 vs Opus 5 Cost Analysis (한국어)](guides/fable-5-1-vs-opus-5-cost-analysis.ko.md)
+- [ক্লডের সাপ্তাহিক Limit ঘোষণা অনুযায়ী বদলেছে](guides/weekly-limit-vs-5h-window.md) — পাঁচ মাসের Claude Code স্ট্যাটাসলাইন ডেটা প্রতিটি অফিশিয়াল ঘোষণার সাথে মিলিয়ে দেখা হয়েছে: মে মাস থেকে সাপ্তাহিক limit একবারই কমেছে, 9/14 তারিখে, ঠিক ঘোষিত 17% অনুযায়ী। কেন এটি এখনও ছোট মনে হয়, সাথে 2026 সালের প্রতিটি reset
+- [ক্লডের সাপ্তাহিক Limit ঘোষণা অনুযায়ী বদলেছে (한국어)](guides/weekly-limit-vs-5h-window.ko.md)
 - [Opus 4.7 vs 4.6 Cost Analysis](guides/opus-4-7-vs-4-6-cost-analysis.md) — ৮,৫৬৩ API calls জুড়ে side-by-side খরচ তুলনা
 - [Opus 4.7 vs 4.6 Cost Analysis (한국어)](guides/opus-4-7-vs-4-6-cost-analysis.ko.md)
 

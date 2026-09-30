@@ -579,6 +579,8 @@ Semua di atas berlaku, ditambah prioritas khusus API ini:
 - [Panduan Cache Prompt](guides/prompt-cache-guide.md) — Mengapa sebagian besar biaya Anda adalah cache, cara kerja caching di berbagai penyedia (Anthropic, OpenAI, Gemini), dan cara mengelolanya ([한국어](guides/prompt-cache-guide-ko.md) · [日本語](guides/prompt-cache-guide-ja.md) · [中文](guides/prompt-cache-guide-zh.md) · [Español](guides/prompt-cache-guide-es.md) · [Français](guides/prompt-cache-guide-fr.md) · [Deutsch](guides/prompt-cache-guide-de.md) · [+16 languages](guides/))
 - [Analisis Biaya Fable 5.1 vs Opus 5](guides/fable-5-1-vs-opus-5-cost-analysis.md) — Setidaknya 24–38% lebih murah dari Opus 5 pada kualitas yang sama, dari 2.782 sesi
 - [Analisis Biaya Fable 5.1 vs Opus 5 (한국어)](guides/fable-5-1-vs-opus-5-cost-analysis.ko.md)
+- [Batas Mingguan Claude Berubah Sesuai Pengumuman](guides/weekly-limit-vs-5h-window.md) — Lima bulan data statusline Claude Code diperiksa terhadap setiap pengumuman resmi: sejak Mei, batas mingguan hanya turun sekali, pada 9/14, tepat sebesar 17% yang diumumkan. Mengapa tetap terasa lebih kecil, plus setiap reset di 2026
+- [Batas Mingguan Claude Berubah Sesuai Pengumuman (한국어)](guides/weekly-limit-vs-5h-window.ko.md)
 - [Analisis Biaya Opus 4.7 vs 4.6](guides/opus-4-7-vs-4-6-cost-analysis.md) — Perbandingan biaya berdampingan dari 8.563 panggilan API
 - [Analisis Biaya Opus 4.7 vs 4.6 (한국어)](guides/opus-4-7-vs-4-6-cost-analysis.ko.md)
 

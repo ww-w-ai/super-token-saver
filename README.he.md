@@ -579,6 +579,8 @@ super-token-saver הוא קוד פתוח לחלוטין (Apache-2.0). JavaScript
 - [מדריך Prompt Cache](guides/prompt-cache-guide.md) — מדוע רוב העלות שלך היא cache, איך caching עובד אצל ספקים (Anthropic, OpenAI, Gemini), ואיך לנהל אותו ([한국어](guides/prompt-cache-guide-ko.md) · [日本語](guides/prompt-cache-guide-ja.md) · [中文](guides/prompt-cache-guide-zh.md) · [Español](guides/prompt-cache-guide-es.md) · [Français](guides/prompt-cache-guide-fr.md) · [Deutsch](guides/prompt-cache-guide-de.md) · [+16 languages](guides/))
 - [ניתוח עלויות Fable 5.1 לעומת Opus 5](guides/fable-5-1-vs-opus-5-cost-analysis.md) — זול לפחות ב-24–38% מ-Opus 5 באותה איכות, על פני 2,782 סשנים
 - [ניתוח עלויות Fable 5.1 לעומת Opus 5 (한국어)](guides/fable-5-1-vs-opus-5-cost-analysis.ko.md)
+- [המגבלה השבועית של קלוד השתנתה בדיוק כפי שהוכרז](guides/weekly-limit-vs-5h-window.md) — חמישה חודשים של נתוני שורת הסטטוס של Claude Code נבדקו מול כל הודעה רשמית: מאז מאי המגבלה השבועית ירדה פעם אחת בלבד, ב-9/14, בדיוק ב-17% שהוכרזו. מדוע היא עדיין מרגישה קטנה יותר, ורשימת כל האיפוס ב-2026
+- [המגבלה השבועית של קלוד השתנתה בדיוק כפי שהוכרז (한국어)](guides/weekly-limit-vs-5h-window.ko.md)
 - [ניתוח עלויות Opus 4.7 לעומת 4.6](guides/opus-4-7-vs-4-6-cost-analysis.md) — השוואת עלויות זה לצד זה על פני 8,563 קריאות API
 - [ניתוח עלויות Opus 4.7 לעומת 4.6 (한국어)](guides/opus-4-7-vs-4-6-cost-analysis.ko.md)
 

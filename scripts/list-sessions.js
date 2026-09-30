@@ -191,6 +191,11 @@ async function analyzeSession(filePath) {
   const genuineMessages = [];
   let firstActiveTimestamp = null;
   let lastUserTimestamp = null;
+  // Non-interactive `claude -p` runs stamp every row with entrypoint
+  // "sdk-cli"; a human-opened session stamps "cli". Captured from the FIRST
+  // row that carries the field at all (it rides on "attachment" rows, not
+  // "user" rows, so this must run before the user-type filter below).
+  let entrypoint = null;
 
   for await (const line of rl) {
     const trimmed = line.trim();
@@ -201,6 +206,10 @@ async function analyzeSession(filePath) {
       obj = JSON.parse(trimmed);
     } catch {
       continue;
+    }
+
+    if (entrypoint === null && typeof obj.entrypoint === "string") {
+      entrypoint = obj.entrypoint;
     }
 
     if (obj.type !== "user") continue;
@@ -228,6 +237,7 @@ async function analyzeSession(filePath) {
     genuineMessages,
     firstActiveTimestamp,
     lastUserTimestamp,
+    nonInteractive: entrypoint === "sdk-cli",
   };
 }
 
@@ -319,6 +329,10 @@ async function main() {
         source: "codex",
         originalPath: session.path,
         startedIso: session.started,
+        // `codex exec` / SDK runs stamp session_meta.payload.source === "exec",
+        // the same non-interactive signal `entrypoint: "sdk-cli"` is for
+        // Claude Code — see codex-transcript.js readSessionMeta().
+        nonInteractive: session.nonInteractive === true,
       });
     }
   }
@@ -338,8 +352,12 @@ async function main() {
       genuineMessages,
       firstActiveTimestamp,
       lastUserTimestamp,
+      nonInteractive: claudeNonInteractive,
     } = await analyzeSession(entry.path);
     const isMain = genuineMessages.length >= 1;
+    // Claude: from the JSONL's own entrypoint field. Codex: from session_meta,
+    // already resolved onto the entry when it was pushed above.
+    const nonInteractive = entry.source === "codex" ? entry.nonInteractive === true : claudeNonInteractive;
 
     if (!all && !isMain) continue;
 
@@ -368,6 +386,7 @@ async function main() {
       lastMsg: truncateMsg(cleanForDisplay([...genuineMessages].reverse().find((m) => !isBareCommand(m)) || genuineMessages[genuineMessages.length - 1] || ""), 100),
       userMsgCount: genuineMessages.length,
       isMain,
+      nonInteractive,
       hasContextLoss,
       contextLossEvents,
       lastContextLossLine,
@@ -401,8 +420,14 @@ async function main() {
     s.isCurrent = s.id === currentId && (!currentSource || s.source === currentSource);
   }
 
+  // Exclude non-interactive (`claude -p` / `codex exec`) runs — an AI-launched
+  // one-shot session, not one a human opened. isCurrent is computed above and
+  // checked first so the running session is never excluded, even if it is
+  // itself non-interactive.
+  const visible = mainSessions.filter((s) => s.isCurrent || !s.nonInteractive);
+
   // Apply offset, then limit
-  const results = mainSessions.slice(offset, offset + limit);
+  const results = visible.slice(offset, offset + limit);
 
   process.stdout.write(JSON.stringify(results, null, 2) + "\n");
 }

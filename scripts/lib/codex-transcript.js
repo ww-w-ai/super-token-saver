@@ -50,8 +50,8 @@ const INDEX_PATH = path.join(NORMALIZED_ROOT, "index.json");
 // of these rows, so it must be rewritten too.
 const NORMALIZED_FORMAT_VERSION = 4;
 // The session index caches readSessionMeta()'s result, so it versions with that shape,
-// not with the normalized files. v5 adds `account`.
-const INDEX_VERSION = 5;
+// not with the normalized files. v5 adds `account`. v6 adds `nonInteractive`.
+const INDEX_VERSION = 6;
 
 // Outgoing tool calls that dispatch or message another agent. Matched against
 // the tool's base name once a known namespace prefix is stripped — Codex has
@@ -157,6 +157,10 @@ function readSessionMeta(filePath) {
       // Hashed like Claude Code's account; the raw id is never kept. Absent before CLI 0.157.
       account: p.creator_account_id ? accountHash(p.creator_account_id) : null,
       isSubagent: p.thread_source === "subagent" || !!spawn,
+      // `codex exec` and SDK-driven runs stamp payload.source === "exec" —
+      // Codex's equivalent of Claude Code's `entrypoint: "sdk-cli"`. An
+      // interactive terminal/IDE session stamps "cli" or "vscode" instead.
+      nonInteractive: p.source === "exec",
       agent: spawn
         ? { nickname: spawn.agent_nickname || null, role: spawn.agent_role || null, path: spawn.agent_path || null }
         : null,

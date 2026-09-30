@@ -240,6 +240,10 @@ scripts/test-window-account.js
   → gates per-account 5h windows: an account's tab takes window boundaries from its own
     ratelimit rows only; another account's overlapping resets would merge them past 5 hours
 
+scripts/test-list-sessions-nonint.js
+  → gates list-sessions on both hosts: `claude -p` (entrypoint "sdk-cli") and `codex exec`
+    (session_meta source "exec") runs are left out; the running session is always kept
+
 hooks/cache-expiry-check.sh
   → reads CC transcript JSONL directly (last assistant timestamp)
 

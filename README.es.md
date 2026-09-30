@@ -579,6 +579,8 @@ Todo lo anterior aplica, más estas prioridades específicas de la API:
 - [Guía de caché de prompts](guides/prompt-cache-guide.md) — Por qué la mayor parte de tu costo es caché, cómo funciona el caché entre proveedores (Anthropic, OpenAI, Gemini) y cómo gestionarlo ([한국어](guides/prompt-cache-guide-ko.md) · [日本語](guides/prompt-cache-guide-ja.md) · [中文](guides/prompt-cache-guide-zh.md) · [Español](guides/prompt-cache-guide-es.md) · [Français](guides/prompt-cache-guide-fr.md) · [Deutsch](guides/prompt-cache-guide-de.md) · [+16 idiomas](guides/))
 - [Análisis de costos Fable 5.1 vs Opus 5](guides/fable-5-1-vs-opus-5-cost-analysis.md) — Al menos un 24–38 % más barato que Opus 5 a igual calidad, en 2.782 sesiones
 - [Análisis de costos Fable 5.1 vs Opus 5 (한국어)](guides/fable-5-1-vs-opus-5-cost-analysis.ko.md)
+- [El límite semanal de Claude cambió tal como se anunció](guides/weekly-limit-vs-5h-window.md) — Cinco meses de datos de la barra de estado de Claude Code comparados con cada anuncio oficial: desde mayo, el límite semanal bajó una sola vez, el 9/14, exactamente el 17% anunciado. Por qué aun así se siente más pequeño, más todos los reinicios de 2026
+- [El límite semanal de Claude cambió tal como se anunció (한국어)](guides/weekly-limit-vs-5h-window.ko.md)
 - [Análisis de costos Opus 4.7 vs 4.6](guides/opus-4-7-vs-4-6-cost-analysis.md) — Comparación de costos lado a lado en 8.563 llamadas a la API
 - [Análisis de costos Opus 4.7 vs 4.6 (한국어)](guides/opus-4-7-vs-4-6-cost-analysis.ko.md)
 

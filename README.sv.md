@@ -588,6 +588,8 @@ Allt ovanstående gäller, plus dessa API-specifika prioriteringar:
 - [Guide för promptcache](guides/prompt-cache-guide.md) — Varför det mesta av din kostnad är cache, hur caching fungerar hos leverantörer (Anthropic, OpenAI, Gemini) och hur du hanterar det ([한국어](guides/prompt-cache-guide-ko.md) · [日本語](guides/prompt-cache-guide-ja.md) · [中文](guides/prompt-cache-guide-zh.md) · [Español](guides/prompt-cache-guide-es.md) · [Français](guides/prompt-cache-guide-fr.md) · [Deutsch](guides/prompt-cache-guide-de.md) · [+16 languages](guides/))
 - [Kostnadsanalys Fable 5.1 vs Opus 5](guides/fable-5-1-vs-opus-5-cost-analysis.md) — Minst 24–38 % billigare än Opus 5 vid samma kvalitet, över 2 782 sessioner
 - [Kostnadsanalys Fable 5.1 vs Opus 5 (한국어)](guides/fable-5-1-vs-opus-5-cost-analysis.ko.md)
+- [Claudes veckogräns ändrades enligt aviseringen](guides/weekly-limit-vs-5h-window.md) — Fem månaders Claude Code-statusradsdata jämförda med varje officiellt tillkännagivande: sedan maj har veckogränsen sjunkit en enda gång, den 9/14, exakt med de aviserade 17 %. Varför den ändå känns mindre, plus varje återställning under 2026
+- [Claudes veckogräns ändrades enligt aviseringen (한국어)](guides/weekly-limit-vs-5h-window.ko.md)
 - [Kostnadsanalys Opus 4.7 vs 4.6](guides/opus-4-7-vs-4-6-cost-analysis.md) — Jämförelse sida vid sida över 8 563 API-anrop
 - [Kostnadsanalys Opus 4.7 vs 4.6 (한국어)](guides/opus-4-7-vs-4-6-cost-analysis.ko.md)
 
