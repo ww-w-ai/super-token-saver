@@ -38,8 +38,11 @@ try {
   fixture(3, { start: '2026-09-03T00:00:00Z', rows: [message('user', 'LATER_SESSION')] });
   fixture(4, { project: '/another/project', rows: [message('user', 'OTHER_PROJECT')] });
   fixture(5, { subagent: true, rows: [message('user', 'SUBAGENT_SESSION')] });
+  fixture(6, { archived: true, rows: [message('user', 'UNNAMED_PREDECESSOR')] });
+  // The current session names 1-5, so 2-5 are left out by time, project and subagent rules, not
+  // for being unnamed; 6 is a valid predecessor it never names.
   const file = fixture(10, { start: '2026-09-02T00:00:00Z', end: '2026-09-02T01:00:00Z', rows: [
-    message('user', 'CURRENT_HUMAN'), message('assistant', 'LONG_REPLY_' + 'x'.repeat(900)),
+    message('user', `CURRENT_HUMAN continue ${[1, 2, 3, 4, 5].map(id).join(' ')}`), message('assistant', 'LONG_REPLY_' + 'x'.repeat(900)),
     tool('spawn_agent', { task_name: 'worker-one', message: 'DISPATCH_BODY' }),
     tool('send_message', { target: 'worker-one', message: 'OUTBOUND_BODY' }),
     tool('collaboration.followup_task', { target: 'worker-one', message: 'FOLLOWUP_BODY' }),
@@ -57,7 +60,7 @@ try {
   for (const marker of ['CURRENT_HUMAN', 'DISPATCH_BODY', 'OUTBOUND_BODY', 'FOLLOWUP_BODY', 'INBOUND_BODY', 'COMPLETION_BODY', 'NEW_TASK_BODY', 'SHARED_HANDOFF', 'ARCHIVED_PREDECESSOR']) check(`keeps ${marker}`, r.stdout.includes(marker));
   check('outgoing recipient identity survives', r.stdout.includes('send_message → worker-one'));
   check('spawn task identity survives', r.stdout.includes('spawn_agent → worker-one'));
-  for (const marker of ['EARLIER_STARTED_OVERLAP', 'LATER_SESSION', 'OTHER_PROJECT', 'SUBAGENT_SESSION', 'GENERIC_INJECTION', 'GENERIC_TOOL']) check(`excludes ${marker}`, !r.stdout.includes(marker));
+  for (const marker of ['EARLIER_STARTED_OVERLAP', 'LATER_SESSION', 'OTHER_PROJECT', 'SUBAGENT_SESSION', 'UNNAMED_PREDECESSOR', 'GENERIC_INJECTION', 'GENERIC_TOOL']) check(`excludes ${marker}`, !r.stdout.includes(marker));
   check('full newest reply survives', r.stdout.includes('x'.repeat(900)));
   check('original communication line marker survives', /L5\] Assistant:/.test(r.stdout));
   check('injected predecessor names original rollout', r.stdout.includes(`rollout-${id(1)}.jsonl`));
@@ -107,6 +110,7 @@ try {
   const hk = spawnSync('/bin/sh', ['-c', command.command], { env: { ...env, CLAUDE_PLUGIN_ROOT: root }, input: JSON.stringify({ source: 'compact', session_id: id(10), transcript_path: file }), encoding: 'utf8' });
   const context = JSON.parse(hk.stdout).hookSpecificOutput.additionalContext;
   check('registry-selected hook delivers automatic ledger', context.startsWith('# Restored:') && context.includes('OUTBOUND_BODY'));
+  check('Codex hook output stays under the same 9,000-char cap', context.length < 9000 && context.includes('restore.md'));
   const startup = spawnSync('/bin/sh', ['-c', command.command], { env: { ...env, CLAUDE_PLUGIN_ROOT: root }, input: JSON.stringify({ source: 'startup', transcript_path: file }), encoding: 'utf8' });
   check('startup does not auto-restore', startup.status === 0 && startup.stdout === '');
   const missing = spawnSync('/bin/sh', ['-c', command.command], { env: { ...env, CLAUDE_PLUGIN_ROOT: root }, input: JSON.stringify({ source: 'compact', transcript_path: path.join(tmp, 'missing file.jsonl') }), encoding: 'utf8' });

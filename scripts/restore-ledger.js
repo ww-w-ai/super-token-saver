@@ -2,6 +2,12 @@
 /**
  * restore-ledger.js — what the after-compact hook puts back, and the ledger it keeps.
  *
+ * This is PATH ③ of super-compact (Codex, or Claude Code when the 95% prepare failed): the engine
+ * did its own compaction and this reads the dropped turns back from the transcript, verbatim. It
+ * also serves PATH ② (Claude Code with the super-compact mod off) when the hook passes
+ * `--prepared-json <file>`: the ready summary that fork prepared leads the restore. PATH ① (mod on)
+ * never reaches the ledger — the mod rebuilt the conversation and the hook injects only a pointer.
+ *
  * The user-invoked path (/s-continue) renders compact.txt through restore.js and is unchanged.
  * This file is the OTHER path: unattended, after auto-compact, during an autonomous run. The two
  * differ in what they optimise for. /s-continue is asked for and is allowed to be cheap; the
@@ -25,18 +31,31 @@
  *   restore-ledger.md   every segment ever appended, verbatim, in order
  *   restore-cursor      the transcript line number the ledger covers up to
  *
- * Runs can outlive a session. The hook output is therefore assembled from three sources, most
- * recent first, until a token budget is spent: this session's ledger (newest segment
- * verbatim, older ones folded), the project's handoff.md if /s-compact wrote one, and the ledgers
- * of earlier sessions in the same project directory, folded, newest first. A folded segment keeps
- * every human turn whole and shortens assistant replies and teammate messages; nothing is
- * dropped, and every line keeps its L{n} marker into the transcript it came from.
+ * Runs can outlive a session. The restore is therefore assembled from up to four sections, in
+ * priority order, until a token budget is spent: this session's newest segment (verbatim), its
+ * older segments (folded), the project's handoff.md if /s-compact wrote one, and the ledgers of
+ * earlier sessions of the same project THAT THIS SESSION NAMES (full id, or the `Session:` + 8-char
+ * prefix of a ledger header). An unnamed earlier session is never included: picking them by "same
+ * project, ended before, newest five" once filled a restore's first 48K characters with sessions
+ * unrelated to the run. A folded segment keeps head + tail of long human turns (over 500),
+ * assistant replies (over 200) and teammate messages (head only); every line keeps its L{n} marker into the transcript it came from.
+ *
+ * The hook cannot inject that restore. Claude Code caps a hook's additionalContext at 10,000
+ * characters (measured: inline max 9,993, persisted min 10.0 KB) and shows the model a 2 KB
+ * preview past that, so a 150 KB restore never reached the model. The full restore goes to
+ * restore.md beside the ledger instead, and the hook output (`--hook`) stays under
+ * HOOK_CHAR_CAP: an instruction to Read that file first, its section index with line numbers, and
+ * as many of the newest turns as fit. Codex gets the same output; whether Codex has the same cap
+ * is unverified.
  *
  * Usage:
- *   node restore-ledger.js <transcript.jsonl> [--append] [--budget TOKENS] [--out <file>]
+ *   node restore-ledger.js <transcript.jsonl> [--append] [--hook [--handled]] [--budget TOKENS] [--out <file>]
  *
- *   --append   extend this session's ledger from its cursor to the end of the transcript first.
- *              The hook passes it; a dry render for inspection leaves it off.
+ *   --append   extend this session's ledger from its cursor to the end of the transcript first,
+ *              and write restore.md. The hook passes it; a dry render for inspection leaves it off.
+ *   --hook     print the short hook context instead of the full restore (writes restore.md).
+ *   --handled  with --hook: the super-compact module already rebuilt the conversation, so print
+ *              only the pointer to restore.md, no turns.
  */
 
 const fs = require("fs");
@@ -65,14 +84,20 @@ function estimateTokens(text) {
   return Math.ceil(ascii / 4 + other / 1.5);
 }
 /** Folded widths: what an older segment keeps of each reply and teammate message. */
-const FOLD_REPLY = 200;
-const FOLD_TEAMMATE = 300;
-/** Sessions of the same project consulted for earlier context, at most. */
+// Same criteria as hooks/super-compact.ts (USER_FOLD / REPLY_FOLD): over -> head + marker + tail.
+const FOLD_USER = { over: 500, head: 300, tail: 200 };
+const FOLD_REPLY = { over: 200, head: 100, tail: 100 };
+// why: intentional divergence from the mod. The no-summary path (Codex) has no summary section B to hold teammate text verbatim, so the ledger keeps it folded here.
+const FOLD_TEAMMATE = { over: 300, head: 300, tail: 0 };
+/** Earlier sessions this session names, at most. */
 const MAX_EARLIER_SESSIONS = 5;
+/** Characters of hook output, at most. Claude Code's additionalContext cap is 10,000. */
+const HOOK_CHAR_CAP = 9_000;
 
 const LEDGER_NAME = "restore-ledger.md";
 const CURSOR_NAME = "restore-cursor";
 const HANDOFF_NAME = "handoff.md";
+const RESTORE_NAME = "restore.md";
 
 /**
  * Bumped whenever `classify()` learns to keep a row type it used to skip. A
@@ -233,6 +258,7 @@ function ledgerPaths(transcriptPath) {
     handoffDir: path.join(CACHE_BASE, projectHash),
     ledger: path.join(cacheDir, LEDGER_NAME),
     cursor: path.join(cacheDir, CURSOR_NAME),
+    restore: path.join(cacheDir, RESTORE_NAME),
   };
 }
 
@@ -342,14 +368,15 @@ function splitSegments(text) {
 
 const ENTRY_HEAD = /^\[Session:[^\]]+\] (User|Assistant|Teammate|Agent|Machine|System):$/;
 
-function fold(s, width) {
+function fold(s, { over, head, tail }) {
   const t = s.trim();
-  if (t.length <= width) return t;
-  return t.slice(0, width).trimEnd() + ` …[+${t.length - width} chars, read L{n} for the rest]`;
+  if (t.length <= over) return t;
+  const tailText = tail > 0 ? " " + t.slice(-tail).trimStart() : "";
+  return t.slice(0, head).trimEnd() + ` …[+${t.length - head - tail} chars, read L{n} for the rest]` + tailText;
 }
 
 /**
- * A segment with every human turn whole and the rest shortened. The entry headers and their L{n}
+ * A segment with every entry folded to head + tail by the FOLD_* rules (short ones stay whole). The entry headers and their L{n}
  * markers are untouched, so anything shortened here can be read back from the transcript.
  */
 function foldSegment(segment) {
@@ -372,7 +399,7 @@ function foldSegment(segment) {
       i++;
     }
     const text = body.join("\n").trim();
-    if (role === "User" || role === "System") out.push(text, "");
+    if (role === "User" || role === "System") out.push(fold(text, FOLD_USER), "");
     else if (role === "Teammate") out.push(fold(text, FOLD_TEAMMATE), "");
     else out.push(fold(text, FOLD_REPLY), "");
   }
@@ -422,9 +449,20 @@ function startedAt(transcriptPath) {
  * on disk, because the hook only ever appends at compaction — a session that ended without
  * compacting would otherwise have no ledger and nothing to hand on. A ledger whose transcript is
  * gone is still consulted.
+ *
+ * Only sessions this session names are candidates (`namesSession`). The names are searched in
+ * this session's own ledger, not its raw transcript: the raw transcript also holds earlier hook
+ * output, which listed unrelated sessions and would otherwise keep re-selecting them.
  */
 function earlierSessions(p) {
-  return p.isCodex ? earlierSessionsCodex(p) : earlierSessionsCC(p);
+  const own = fs.existsSync(p.ledger) ? fs.readFileSync(p.ledger, "utf8") : "";
+  const named = (sessionId) => namesSession(own, sessionId);
+  return p.isCodex ? earlierSessionsCodex(p, named) : earlierSessionsCC(p, named);
+}
+
+/** Whether `text` names `sessionId`: the full id, or a ledger header's `Session:` + 8-char prefix. */
+function namesSession(text, sessionId) {
+  return text.includes(sessionId) || text.includes(`Session:${shortSid(sessionId)}`);
 }
 
 /**
@@ -437,7 +475,7 @@ function earlierSessions(p) {
  * only exists once a session is first read, so its mtime reflects when THAT
  * happened, not when the session itself ran.
  */
-function earlierSessionsCodex(p) {
+function earlierSessionsCodex(p, named) {
   if (!p.cwd) return [];
   const ownMeta = codex.readSessionMeta(p.original);
   const ownStart = ownMeta && ownMeta.started ? Date.parse(ownMeta.started) : NaN;
@@ -448,7 +486,7 @@ function earlierSessionsCodex(p) {
 
   const candidates = [];
   for (const s of sessions) {
-    if (s.sessionId === p.sessionId) continue; // this session
+    if (s.sessionId === p.sessionId || !named(s.sessionId)) continue;
     const start = s.started ? Date.parse(s.started) : NaN;
     if (!Number.isFinite(start)) continue; // missing timestamp: excluded, never Date.now()
     const ended = Number(s.mtimeMs);
@@ -466,7 +504,7 @@ function earlierSessionsCodex(p) {
   return found;
 }
 
-function earlierSessionsCC(p) {
+function earlierSessionsCC(p, named) {
   const ownStart = startedAt(p.parsePath) || Date.now();
   const candidates = new Map(); // sessionId -> { sessionId, transcript?, mtime }
 
@@ -477,7 +515,7 @@ function earlierSessionsCC(p) {
   for (const f of siblings) {
     const full = path.join(p.transcriptDir, f);
     const sid = f.slice(0, -".jsonl".length);
-    if (sid === p.sessionId) continue;
+    if (sid === p.sessionId || !named(sid)) continue;
     const mt = fileMtime(full);
     if (!mt || mt > ownStart) continue;
     candidates.set(sid, { sessionId: sid, transcript: full, mtime: mt });
@@ -488,7 +526,7 @@ function earlierSessionsCC(p) {
     cached = fs.readdirSync(p.projectDir);
   } catch {}
   for (const d of cached) {
-    if (d === p.sessionId || candidates.has(d)) continue;
+    if (d === p.sessionId || candidates.has(d) || !named(d)) continue;
     const lp = path.join(p.projectDir, d, LEDGER_NAME);
     const mt = fileMtime(lp);
     if (mt) candidates.set(d, { sessionId: d, transcript: null, mtime: mt });
@@ -529,65 +567,206 @@ function tailWithin(segment, fits) {
   return "";
 }
 
-/**
- * The text the hook hands back. Newest first inside the budget: this session's segments (the
- * latest verbatim, earlier ones folded), then handoff.md, then earlier sessions' ledgers folded.
- * Emitted oldest-first so it reads as a conversation.
- *
- * The newest segment is never dropped for size. If it does not fit verbatim it is folded; if it
- * does not fit folded, its tail is taken. Only then do older segments compete for what is left.
- */
-function assemble(p, budget) {
-  const pieces = []; // pushed newest first, reversed at the end
+/** The restore's sections, in priority order; the file lists them in this order. */
+const SECTION_TITLES = {
+  newest: "## 1. This session: newest segment",
+  older: "## 2. This session: earlier segments (folded)",
+  handoff: "## 3. Handoff written by /s-compact",
+  earlier: "## 4. Earlier sessions this session names (folded)",
+};
+
+/** Token accounting for the restore: one budget across every block and heading taken. */
+function budgeter(budget) {
   let spent = 0;
-  const blockOf = (label, text) => (label ? `${label}\n\n` : "") + text.trim() + "\n";
-  const fits = (label, text) => spent + estimateTokens(blockOf(label, text)) + 1 <= budget;
-  const take = (label, text) => {
-    if (!text || !text.trim() || !fits(label, text)) return false;
-    const block = blockOf(label, text);
-    pieces.push(block);
-    spent += estimateTokens(block) + 1; // +1 for the joining newline
-    return true;
+  const cost = (parts) => parts.reduce((s, t) => s + estimateTokens(t) + 1, 0);
+  return {
+    fits: (...parts) => spent + cost(parts) <= budget,
+    take(...parts) {
+      if (!this.fits(...parts)) return false;
+      spent += cost(parts);
+      return true;
+    },
   };
+}
 
-  let own = [];
-  if (fs.existsSync(p.ledger)) own = splitSegments(fs.readFileSync(p.ledger, "utf8"));
-  if (own.length > 0) {
-    const newest = own[own.length - 1];
-    if (!take("", newest)) {
-      const folded = foldSegment(newest);
-      if (!take("", folded)) take("", tailWithin(folded, (t) => fits("", t)));
-    }
-    for (let i = own.length - 2; i >= 0; i--) {
-      if (!take("", foldSegment(own[i]))) break;
-    }
+/** A heading's cost only on the first block taken under it. */
+function headingOnce(list, heading) {
+  return list.length ? [] : [heading];
+}
+
+/**
+ * This session's own segments. The newest is never dropped for size: verbatim if it fits, else
+ * folded, else the tail of the folded text. Older segments follow, newest first, until one does
+ * not fit; they are returned oldest first.
+ */
+function takeOwn(p, b) {
+  const own = fs.existsSync(p.ledger) ? splitSegments(fs.readFileSync(p.ledger, "utf8")) : [];
+  const out = { newest: [], older: [] };
+  if (!own.length) return out;
+  const newest = own[own.length - 1];
+  const head = SECTION_TITLES.newest;
+  const folded = foldSegment(newest);
+  const chosen = b.fits(head, newest) ? newest : b.fits(head, folded) ? folded : tailWithin(folded, (t) => b.fits(head, t));
+  if (chosen && b.take(head, chosen)) out.newest.push(chosen);
+  for (let i = own.length - 2; i >= 0; i--) {
+    const seg = foldSegment(own[i]);
+    if (!b.take(...headingOnce(out.older, SECTION_TITLES.older), seg)) break;
+    out.older.unshift(seg);
   }
+  return out;
+}
 
-  const handoff = path.join(p.handoffDir, HANDOFF_NAME);
-  if (fs.existsSync(handoff)) {
-    take(`## handoff written by /s-compact (${new Date(fileMtime(handoff)).toISOString()})`, fs.readFileSync(handoff, "utf8"));
-  }
+function takeHandoff(p, b) {
+  const file = path.join(p.handoffDir, HANDOFF_NAME);
+  if (!fs.existsSync(file)) return [];
+  const text = `(written ${new Date(fileMtime(file)).toISOString()})\n\n${fs.readFileSync(file, "utf8").trim()}`;
+  return b.take(SECTION_TITLES.handoff, text) ? [text] : [];
+}
 
+/**
+ * Earlier sessions this session names, newest session first while the budget lasts; each one's
+ * segments newest first until one does not fit. Returned oldest session first, each session's
+ * segments oldest first, so its label always opens its own group.
+ */
+function takeEarlier(p, b) {
+  const groups = [];
+  let opened = false;
   for (const e of earlierSessions(p)) {
+    const label = `### earlier session ${e.sessionId}${e.original ? `\n# transcript: ${e.original}\n# ledger: ${e.path}` : ""}`;
     const segs = splitSegments(fs.readFileSync(e.path, "utf8"));
-    let any = false;
+    const group = { label, segments: [] };
     for (let i = segs.length - 1; i >= 0; i--) {
-      const label = `## earlier session ${e.sessionId} (same project, folded)${e.original ? `\n# transcript: ${e.original}\n# ledger: ${e.path}` : ""}`;
-      if (!take(any ? "" : label, foldSegment(segs[i]))) break;
-      any = true;
+      const seg = foldSegment(segs[i]);
+      const heads = [...(opened ? [] : [SECTION_TITLES.earlier]), ...headingOnce(group.segments, label)];
+      if (!b.take(...heads, seg)) break;
+      opened = true;
+      group.segments.unshift(seg);
     }
-    if (!any) break;
+    if (!group.segments.length) break;
+    groups.unshift(group);
   }
+  return groups;
+}
 
-  return pieces.reverse().join("\n");
+/**
+ * The restore, as sections in priority order: this session's newest segment, its older segments,
+ * handoff.md, earlier sessions this session names. Chronological inside each section. Blocks are
+ * chosen newest first under one token budget, so what is left out is always the oldest.
+ */
+function collectSections(p, budget) {
+  const b = budgeter(budget);
+  const own = takeOwn(p, b);
+  const handoff = takeHandoff(p, b);
+  const earlier = takeEarlier(p, b);
+  return [
+    { title: SECTION_TITLES.newest, blocks: own.newest },
+    { title: SECTION_TITLES.older, blocks: own.older },
+    { title: SECTION_TITLES.handoff, blocks: handoff },
+    { title: SECTION_TITLES.earlier, blocks: earlier.flatMap((g) => [g.label, ...g.segments]) },
+  ].filter((s) => s.blocks.length);
+}
+
+/** Sections rendered as one text, with each section's first and last line (1-based). */
+function renderSections(sections) {
+  const lines = [];
+  const index = [];
+  for (const s of sections) {
+    const start = lines.length + 1;
+    lines.push(s.title, "");
+    for (const block of s.blocks) lines.push(...block.trim().split("\n"), "");
+    index.push({ title: s.title.replace(/^## /, ""), start, end: lines.length - 1 }); // last line is the blank separator
+  }
+  return { text: lines.join("\n"), index };
+}
+
+/** The full restore text (what restore.md holds and a non-hook run prints). */
+function assemble(p, budget) {
+  return renderSections(collectSections(p, budget)).text;
+}
+
+// ───────────────────────────── hook output ─────────────────────────────
+
+const HOOK_HEAD = `# Restored: the turns this session lost to compaction
+
+Compaction dropped earlier turns from context. super-token-saver read them back from this
+session's own transcript: the real conversation, not a summary and **not a new request**.`;
+
+const HANDLED_HEAD = `# Compaction handled by super-compact
+
+super-token-saver's super-compact module rebuilt this conversation itself (a summary, this span's
+dialogue abbreviated with [L{n}] line pointers, the current turn verbatim), so the restore is not
+injected again.
+If a detail turns out to be missing, the full restore is on disk:`;
+
+const HOOK_RULES = `Prefer it over the compact summary wherever the two disagree, and do NOT re-derive findings
+that already appear in it. If you were mid-run on an autonomous task (cowork-sprint, pdca-wf, a
+Workflow), resume from it rather than re-planning. Standing orders stated there still govern the
+work. Folded entries end in \`…[+N chars, read L{n} for the rest]\`: read that line of the
+transcript (named in the entry's \`[Session:… L{n}]\` header) when one matters.`;
+
+function fileIndex(restorePath, text, index) {
+  const bytes = Buffer.byteLength(text, "utf8");
+  const rows = index.map((s) => `- lines ${s.start}-${s.end}: ${s.title}`).join("\n");
+  return `\`${restorePath}\` (${bytes} bytes, ${text.split("\n").length} lines). Sections, newest first:\n${rows}`;
+}
+
+/** Whole entries of `segment`, newest last, that fit in `room` characters; or the last entry cut. */
+function newestEntriesWithin(segment, room) {
+  const lines = segment.split("\n");
+  const starts = [];
+  for (let i = 0; i < lines.length; i++) if (ENTRY_HEAD.test(lines[i])) starts.push(i);
+  for (const s of starts) {
+    const text = lines.slice(s).join("\n").trim();
+    if (text.length <= room) return text;
+  }
+  if (!starts.length) return "";
+  const last = lines.slice(starts[starts.length - 1]).join("\n").trim();
+  const marker = "\n…[cut here; the rest of this entry is in the file above]";
+  const keep = room - marker.length;
+  return keep > 200 ? last.slice(0, keep) + marker : "";
+}
+
+/**
+ * What the after-compact hook injects, always under HOOK_CHAR_CAP characters: an instruction to
+ * Read restore.md first with its section index, then as many of the newest turns as fit.
+ * With `handled`, only the pointer: the super-compact module already put the dialogue back.
+ */
+function hookContext(p, rendered, { handled = false } = {}) {
+  const pointer = fileIndex(p.restore, rendered.text, rendered.index);
+  if (handled) return `${HANDLED_HEAD}\n${pointer}\n`.slice(0, HOOK_CHAR_CAP - 1);
+  const head =
+    `${HOOK_HEAD}\n\n**Before your first substantive action, Read this file in full:** ${pointer}\n\n${HOOK_RULES}\n\n` +
+    "## Newest turns, verbatim (everything older is only in the file)\n\n";
+  const own = fs.existsSync(p.ledger) ? splitSegments(fs.readFileSync(p.ledger, "utf8")) : [];
+  const turns = own.length ? newestEntriesWithin(own[own.length - 1], HOOK_CHAR_CAP - 1 - head.length) : "";
+  return (head + turns + "\n").slice(0, HOOK_CHAR_CAP - 1);
 }
 
 // ───────────────────────────── CLI ─────────────────────────────
 
-const VALUED = new Set(["--budget", "--out"]);
+const VALUED = new Set(["--budget", "--out", "--prepared-json"]);
+
+/** Title of the section a path-2 run prepends: the summary the 95% fork prepared before compaction. */
+const PREPARED_SECTION_TITLE = "## Prepared summary (written at 95%, before this compaction)";
+
+/**
+ * The ready summary inside a prepared.json, for path 2 (CC, super-compact mod off): the shell fork
+ * wrote the summary but no mod rebuilt the conversation, so it is prepended to the restore here.
+ * Any other status, or a missing/unreadable file, yields "" and the restore is the ledger alone
+ * (path 3, unchanged).
+ */
+function preparedSummary(file) {
+  if (!file) return "";
+  try {
+    const m = JSON.parse(fs.readFileSync(file, "utf8"));
+    return m && m.status === "ready" && typeof m.summary === "string" ? m.summary.trim() : "";
+  } catch {
+    return "";
+  }
+}
 
 function parseArgs(argv) {
-  const opts = { transcript: null, append: false, budget: DEFAULT_BUDGET, out: null };
+  const opts = { transcript: null, append: false, hook: false, handled: false, budget: DEFAULT_BUDGET, out: null, preparedJson: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (VALUED.has(a)) {
@@ -595,8 +774,11 @@ function parseArgs(argv) {
       if (a === "--budget") {
         const n = Number(v);
         if (Number.isFinite(n) && n > 0) opts.budget = n;
-      } else opts.out = v;
+      } else if (a === "--prepared-json") opts.preparedJson = v;
+      else opts.out = v;
     } else if (a === "--append") opts.append = true;
+    else if (a === "--hook") opts.hook = true;
+    else if (a === "--handled") opts.handled = true;
     else if (!a.startsWith("--") && opts.transcript === null) opts.transcript = a;
   }
   return opts;
@@ -605,7 +787,7 @@ function parseArgs(argv) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.transcript) {
-    process.stderr.write("Usage: node restore-ledger.js <transcript.jsonl> [--append] [--budget TOKENS] [--out <file>]\n");
+    process.stderr.write("Usage: node restore-ledger.js <transcript.jsonl> [--append] [--hook [--handled]] [--budget TOKENS] [--out <file>]\n");
     process.exit(1);
   }
   const abs = path.resolve(opts.transcript);
@@ -614,11 +796,21 @@ function main() {
     process.exit(1);
   }
   const p = opts.append ? appendSegment(abs).paths : ledgerPaths(abs);
-  const out = assemble(p, opts.budget);
-  if (out.trim() === "") {
+  let sections = collectSections(p, opts.budget);
+  // Path 2 (mod off): the 95% fork prepared a summary but nothing rebuilt the conversation, so the
+  // prepared summary leads the restore. Path 3 passes no --prepared-json and this is a no-op.
+  const prepared = preparedSummary(opts.preparedJson);
+  if (prepared) sections = [{ title: PREPARED_SECTION_TITLE, blocks: [prepared] }, ...sections];
+  const rendered = renderSections(sections);
+  if (rendered.text.trim() === "") {
     process.stderr.write("restore-ledger.js: nothing to restore\n");
     process.exit(2);
   }
+  if (opts.append || opts.hook) {
+    fs.mkdirSync(p.cacheDir, { recursive: true });
+    fs.writeFileSync(p.restore, rendered.text);
+  }
+  const out = opts.hook ? hookContext(p, rendered, { handled: opts.handled }) : rendered.text;
   if (opts.out) fs.writeFileSync(opts.out, out);
   else process.stdout.write(out);
 }
@@ -631,9 +823,14 @@ module.exports = {
   appendSegment,
   foldSegment,
   assemble,
+  collectSections,
+  renderSections,
+  hookContext,
+  namesSession,
   ledgerPaths,
   estimateTokens,
   DEFAULT_BUDGET,
+  HOOK_CHAR_CAP,
   LEDGER_FORMAT_VERSION,
   ledgerFormatVersion,
 };

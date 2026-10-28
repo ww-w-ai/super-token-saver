@@ -129,8 +129,10 @@ const STRIP_PATTERNS = [
   /<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g,
   // system-reminder blocks
   /<system-reminder>[\s\S]*?<\/system-reminder>/g,
-  // task-notification blocks
+  // task-notification blocks (subagent completion notices)
   /<task-notification>[\s\S]*?<\/task-notification>/g,
+  // teammate-message blocks (teammate reports)
+  /<teammate-message[\s\S]*?<\/teammate-message>/g,
 ];
 
 const SKIP_USER_PATTERNS = [
@@ -140,6 +142,9 @@ const SKIP_USER_PATTERNS = [
   // ESC-interrupt markers CC injects as user messages (not typed by the user).
   // Skipping keeps them out of the compact transcript and the "Last N messages".
   /^\[Request interrupted by user/,
+  // Idle/waiting notifications CC injects while agents run: not dialogue, dropped
+  // entirely (super-compact keeps teammate/subagent results in the summary layer, not these).
+  /idle_notification/,
 ];
 
 function cleanText(text) {

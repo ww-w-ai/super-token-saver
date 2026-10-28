@@ -1,6 +1,12 @@
 #!/bin/bash
 # SessionStart(source=compact) — put back what compaction dropped, without asking the model to.
 #
+# super-compact paths: ① (CC, mod on) the mod rebuilt the conversation and left a handled marker —
+# this hook consumes it and injects only a pointer to restore.md. ② (CC, mod off) the 95% fork left
+# a ready prepared.json but nothing rebuilt the conversation — this hook passes --prepared-json so
+# restore-ledger.js leads the restore with that summary. ③ (Codex / prepare failed) no marker, no
+# prepared summary — restore-ledger.js reads the dropped turns from the transcript as-is.
+#
 # Auto-compact keeps the session id and keeps writing the SAME transcript, so the pre-compact
 # turns are still on disk; the model just cannot see them any more. The compact summary is a
 # paraphrase, and during an autonomous run (cowork-sprint, pdca-wf, a Workflow) that is not
@@ -25,6 +31,15 @@
 # boundary record is written AFTER this hook runs (measured 112 ms after), and reading it as the
 # last boundary once handed back the segment before the one that had just been dropped.
 #
+# The restore itself does not fit in a hook's output: Claude Code caps additionalContext at 10,000
+# characters and shows the model a 2 KB preview past that. restore-ledger.js --hook therefore
+# writes the full restore to restore.md beside the ledger and prints under 9,000 characters: an
+# instruction to Read that file first, its section index, and the newest turns that fit. Codex
+# gets the same output (whether it has the same cap is unverified).
+#
+# When the super-compact hooks module (Claude Code 2.1.287+) rebuilt the conversation itself, it
+# leaves a marker named after the session id; this hook consumes it and injects only the pointer.
+#
 # additionalContext is the ONLY compaction-adjacent hook output that reaches the model. On Claude
 # Code, PostCompact is absent from the hookSpecificOutput union. On Codex, PostCompact returns a
 # StatelessHookOutcome with no context field, while SessionStart carries additional_contexts —
@@ -42,7 +57,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESTORE="${HERE}/../scripts/restore-ledger.js"
 
 python3 - "$payload" "$RESTORE" <<'PY' 2>/dev/null
-import json, os, shlex, subprocess, sys
+import json, os, shlex, subprocess, sys, time
 
 try:
     payload = json.loads(sys.argv[1])
@@ -56,13 +71,43 @@ sid = payload.get("session_id") or ""
 transcript = payload.get("transcript_path") or ""
 
 
-def restored():
-    """The dropped turns from the ledger, or None if anything at all went wrong."""
+# The super-compact hooks module (Claude Code 2.1.287+) writes this marker when it rebuilt the
+# conversation itself. Then the dialogue is already back in context, and a second restore would
+# put it there twice: the marker is consumed and only a pointer to restore.md is injected. A marker
+# older than HANDLED_MAX_AGE belongs to a compaction whose SessionStart never reached this hook.
+HANDLED_MAX_AGE = 300
+_super_dir = os.path.join(os.path.expanduser("~"), ".claude", "super-token-saver-data", ".super-compact")
+handled_marker = os.path.join(_super_dir, f"{sid}.json") if sid else ""
+# Path 2 (CC, super-compact mod off): the 95% fork left a ready summary but no mod rebuilt the
+# conversation. This file has it; restore-ledger prepends it. In path 1 the mod overwrote it with
+# status "consumed" and wrote the handled marker, so this is only reached when no mod ran.
+prepared_marker = os.path.join(_super_dir, f"{sid}.prepared.json") if sid else ""
+
+
+def consume_handled():
+    """True when super-compact handled this compaction; the marker is removed either way."""
+    if not handled_marker or not os.path.isfile(handled_marker):
+        return False
+    try:
+        fresh = time.time() - os.path.getmtime(handled_marker) <= HANDLED_MAX_AGE
+        os.remove(handled_marker)
+        return fresh
+    except Exception:
+        return False
+
+
+def restored(handled):
+    """The hook context from the ledger (under 9,000 chars), or None if anything went wrong."""
     if not transcript or not os.path.isfile(transcript):
         return None
+    cmd = ["node", restore_js, transcript, "--append", "--hook"]
+    if handled:
+        cmd.append("--handled")
+    elif prepared_marker and os.path.isfile(prepared_marker):
+        cmd += ["--prepared-json", prepared_marker]
     try:
         run = subprocess.run(
-            ["node", restore_js, transcript, "--append"],
+            cmd,
             capture_output=True, text=True, timeout=30,
         )
     except Exception:
@@ -85,7 +130,7 @@ def instruction():
     with the SAME transcript, not to switch pipelines.
     """
     if transcript:
-        cmd = f"node {shlex.quote(restore_js)} {shlex.quote(transcript)} --append"
+        cmd = f"node {shlex.quote(restore_js)} {shlex.quote(transcript)} --append --hook"
         return f"""# This session was just compacted — the automatic restore did not run
 
 The restore that normally runs here failed, so the pre-compact turns are NOT in context. The
@@ -102,7 +147,7 @@ what this path exists to keep):
 {cmd}
 ```
 
-Treat its stdout exactly as "Restored" text is described below: the real conversation, not a
+Follow its stdout: it names the restore file to Read. That file is the real conversation, not a
 summary and not a new request. Prefer it over the compact summary wherever the two disagree, and
 do NOT re-derive findings that already appear in it. If you were mid-run on an autonomous task,
 resume from it rather than re-planning."""
@@ -112,41 +157,18 @@ The restore that normally runs here failed, and this session's transcript path w
 so the exact restore command cannot be named. Do NOT substitute the cheaper `/s-continue` manual
 skill as a stand-in — it drops teammate messages, subagent notices and most reply text, which is
 exactly what the automatic path exists to keep. If you can determine this session's own transcript
-path, rerun `node restore-ledger.js <that transcript> --append` yourself and treat its stdout as
-the restored turns."""
+path, rerun `node restore-ledger.js <that transcript> --append --hook` yourself and follow its
+stdout."""
 
 
-def delivered(text):
-    """The restored turns, framed so they are not mistaken for a new request."""
-    return f"""# Restored: the turns this session lost to compaction
-
-Everything below was read back from this session's own transcript on disk. It is the real
-conversation — the user's own words and your own replies — not a summary and **not a new request**.
-Nothing here is the user asking for something now.
-
-Prefer it over the compact summary wherever the two disagree, and do NOT re-derive findings that
-already appear in it. If you were mid-run on an autonomous task (cowork-sprint, pdca-wf, a
-Workflow), resume from these turns rather than re-planning. Standing orders stated here still
-govern the work.
-
-The newest segment is verbatim: every human turn, every reply you wrote, every teammate message
-and subagent completion notice, and the body of every SendMessage you sent. Tool calls and their
-output are the only thing left out. Earlier segments, a /s-compact handoff, and earlier sessions
-of this project appear folded — human turns whole, replies and teammate messages shortened with a
-`…[+N chars, read L{{n}} for the rest]` marker. Every entry keeps its `[Session:… L{{n}}]` header, so
-read that line of the transcript the moment a shortened entry turns out to matter. The full
-ledger is on disk as restore-ledger.md in this session's super-token-saver-data cache dir.
-
----
-
-{text}"""
-
-
-text = restored()
+handled = consume_handled()
+text = restored(handled)
+if handled and not text:
+    sys.exit(0)  # the dialogue is already back; a failed pointer is not worth an instruction
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "SessionStart",
-        "additionalContext": delivered(text) if text else instruction(),
+        "additionalContext": text if text else instruction(),
     }
 }))
 PY

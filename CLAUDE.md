@@ -81,11 +81,51 @@ older habit is accepted and ignored. The after-compact hook is not asked for and
 so it spends tokens: `scripts/restore-ledger.js` keeps a per-session ledger
 (`restore-ledger.md` + `restore-cursor` in the session cache dir) and each compaction appends
 "everything since the cursor" — human turns, assistant text, teammate messages, task notifications
-and SendMessage bodies verbatim, tool traffic excluded. The newest segment is injected verbatim,
-older segments, the project's `handoff.md` and earlier sessions' ledgers folded, under an estimated 60K-token
-budget. **Never anchor the hook's window on `compact_boundary`**: the hook runs before Claude Code
-writes that record (measured 112 ms before), and a boundary-anchored window once handed back the
-segment before the one that had just been dropped. Gate: `node scripts/test-restore-ledger.js`.
+and SendMessage bodies verbatim, tool traffic excluded. The full restore (newest segment verbatim;
+older segments, the project's `handoff.md` and earlier sessions folded; estimated 60K-token budget)
+goes to `restore.md` beside the ledger, sections newest-first. **The hook output stays under 9,000
+characters** (`--hook`): a Read-this-file-first instruction with the section index and the newest
+turns that fit. Claude Code caps additionalContext at 10,000 characters and shows the model only a
+2 KB preview past that, so an injected restore never reached the model. Codex gets the same output;
+whether Codex has the same cap is unverified. **An earlier session is included only when this
+session's ledger names it** (full id, or `Session:` + 8-char prefix); "same project, newest five"
+once filled a restore with unrelated sessions. **Never anchor the hook's window on
+`compact_boundary`**: the hook runs before Claude Code writes that record (measured 112 ms before),
+and a boundary-anchored window once handed back the segment before the one that had just been
+dropped. Gate: `node scripts/test-restore-ledger.js`.
+
+**super-compact replaces auto-compact at 95%, in three paths.** The trigger is a shell hook, not the
+mod: `scripts/precompact-watch.js` (PostToolUse + Stop) measures the context the way the engine's
+auto-compact check does and, the first time it crosses 95% of the threshold, starts
+`scripts/precompact-prepare.js` exactly once (`O_EXCL` marker, up to 3 retries). prepare forks the
+session off its transcript (`claude -p --resume … --fork-session`) and writes
+`~/.claude/super-token-saver-data/.super-compact/<sid>.prepared.json`
+(`{status, summary, lastSeen, coveredLine}`). `coveredLine` is the transcript's line count when the
+fork began — every later line is newer than the summary. The summary prompt lives ONLY in
+`precompact-prepare.js`; the mod never forks.
+
+| | ① CC, mod on | ② CC, mod off | ③ Codex / prep failed |
+|---|---|---|---|
+| 95% prepare | shell fork → `prepared.json` | same | none |
+| compaction | `hooks/super-compact.ts` (`session.compact`) reads `prepared.json`, rebuilds by `coveredLine` | engine default | engine default |
+| after-compact shell hook | consumes handled marker → injects only the pointer to `restore.md` | writes prepared summary + ledger dialogue to `restore.md` (`restore-ledger.js --prepared-json`) | `restore-ledger.js` as-is |
+| machine messages (teammate reports, subagent notices) | summary layer verbatim, out of the abbreviated dialogue | same | verbatim, re-injected (no summary layer) |
+
+**super-compact is Claude Code-only** (2.1.287+). `hooks/hooks.json` lists the hooks module
+`hooks/super-compact.ts` under `modules` beside the shell `hooks` (older Claude Code strips the
+unknown key; `claude plugin validate` reads both). The mod rebuilds the conversation as: a summary
+message (section A = before the last compaction, section B = what the abbreviated dialogue loses,
+incl. one line per machine message); this span's dialogue, folded with `[L{n}]` pointers from
+`scripts/transcript-lines.js` (widened back to ≥10 human turns; teammate/subagent/idle messages
+left out); then the verbatim tail from `coveredLine`'s anchor (the last two full exchanges always
+inside it; a turn over `LONG_TURN_CAP` keeps its opening + an omission note + the steps past the
+anchor). When pointers are unavailable the compaction still runs without them; any exception falls
+back to core compaction. The mod writes the handled marker
+`~/.claude/super-token-saver-data/.super-compact/<sid>.json` (the ③-path hook consumes it if under
+300 s old → pointer only) and persists each compaction's summary to
+`<session cache>/super-compact/<n>.md`, which the next session's `/s-continue` loads (latest only;
+section A carries the rest). Gate: `claude plugin test .` (module, 15 tests) and the handled-marker
+checks in `scripts/test-restore-ledger.js`.
 
 Codex agent dispatches and incoming agent envelopes use ledger-only normalized records. They do
 not become user turns in manual restoration or usage reports. Earlier Codex sessions are discovered

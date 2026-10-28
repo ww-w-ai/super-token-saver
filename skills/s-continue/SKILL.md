@@ -479,6 +479,32 @@ HANDOFF="${HOME}/.claude/super-token-saver-data/${PROJECT_HASH}/handoff.md"
 
 Run this step AFTER the transcript restore (Steps 1–6) so the handoff layers on top of it.
 
+## Step 7.5: Auto-load the latest super-compact summary (if present)
+
+When super-compact (the Claude Code mod) compacted a restored session, it persisted each
+compaction's prepared summary to `<session cache>/super-compact/<n>.md`. That summary holds what the
+transcript restore cannot recover for the automatic path: teammate reports and subagent completion
+notices verbatim, tool-output numbers, and the reasons behind directives. The `/s-continue` dialogue
+restore deliberately leaves teammate messages, subagent notices and idle notifications out of
+`compact.txt`, so this summary is the only place that content survives for those spans.
+
+For each restored session, load ONLY the highest-numbered file — its section A already carries every
+earlier compaction, so the latest one is enough:
+
+```bash
+SC_DIR="${HOME}/.claude/super-token-saver-data/${PROJECT_HASH}/${SESSION_ID}/super-compact"
+LATEST=$(ls "${SC_DIR}"/[0-9]*.md 2>/dev/null | sort -t/ -k1 -V | tail -1)
+[ -n "${LATEST}" ] && echo "FOUND ${LATEST}" || echo "none"
+```
+
+- **If one exists**: Read it fully into context. It complements the restored transcript. Add one line
+  to the completion message: `- super-compact summary loaded (teammate/subagent results and measurements from compacted spans).`
+- **If none exists**: do nothing — the session was never compacted by the mod, or ran on Codex / older
+  Claude Code (its after-compact restore already put that content back verbatim at the time).
+
+Do NOT consume or move these files: they are per-session history the mod keeps writing, not a one-shot
+handoff like `/s-compact`'s.
+
 ## Output Rules
 
 - Do NOT add any summary beyond the format specified in Step 6 above.

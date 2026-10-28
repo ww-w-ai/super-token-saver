@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] - 2026-10-28
+
+### Added: super-compact — pre-emptive compaction that keeps the conversation (Claude Code)
+
+- At 95% of the auto-compact threshold, a background fork writes a summary. When compaction fires, the
+  engine's summary is replaced by that prepared summary (capped near 10,000 tokens), the span's
+  dialogue abbreviated with `[L{n}]` transcript pointers, and the last ~5% of the conversation kept
+  verbatim — so work continues across a compaction without the usual context loss.
+- Three paths. (1) Claude Code with the mod on rebuilds the conversation in place. (2) Claude Code with
+  the mod off: the after-compact shell hook leads the restore with the same prepared summary, folding
+  by the same rules. (3) Codex, or any prep failure, falls back to the existing restore-ledger path.
+- One trigger, no double work: shell hooks (`precompact-watch.js` on every tool call and stop,
+  `precompact-prepare.js`) prepare the summary; the `session.compact` module consumes it.
+- `[L{n}]` pointers name their own transcript, so a restored summary resolves to the right file even
+  when it is later carried into another session.
+- `/s-continue` loads the latest persisted summary as a handoff; teammate and subagent reports and
+  tool-output numbers are preserved verbatim in the summary layer.
+- Safe by construction: the module is opt-in and falls back to the engine's own compaction on any
+  error, so a session is never left broken.
+
 ## [3.7.5] - 2026-09-30
 
 ### Fixed: `/s-continue` no longer lists one-shot non-interactive runs
