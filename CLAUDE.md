@@ -62,9 +62,11 @@ Three manifests, **one version between them**:
 | `manifest.json` | Codex marketplace listing |
 
 The hook registries are host-specific. Claude Code auto-discovers `hooks/hooks.json`, which keeps
-the prompt-cache, statusline, git-context, architecture, and compact-restoration hooks. Codex's
-manifest points to `hooks/hooks-codex.json`, which injects `session-architecture-codex.md` and keeps
-compact restoration without loading the three Claude Code-only hook contracts.
+the prompt-cache, statusline, git-context, architecture, super-compact (watch, `PreCompact` wait,
+mod) and compact-restoration hooks. Codex's manifest points to `hooks/hooks-codex.json`, which
+injects `session-architecture-codex.md` and keeps the super-compact watch, the `PreCompact` wait and
+compact restoration, without loading the three Claude Code-only hook contracts. A super-compact
+hook added to one registry goes into the other in the same change, or it silently never runs there.
 
 **The after-compact hook restores; it does not ask the model to.** It runs
 `scripts/restore-ledger.js --append` and injects the result as `additionalContext`. Do not turn it
@@ -94,38 +96,61 @@ once filled a restore with unrelated sessions. **Never anchor the hook's window 
 and a boundary-anchored window once handed back the segment before the one that had just been
 dropped. Gate: `node scripts/test-restore-ledger.js`.
 
-**super-compact replaces auto-compact at 95%, in three paths.** The trigger is a shell hook, not the
-mod: `scripts/precompact-watch.js` (PostToolUse + Stop) measures the context the way the engine's
-auto-compact check does and, the first time it crosses 95% of the threshold, starts
-`scripts/precompact-prepare.js` exactly once (`O_EXCL` marker, up to 3 retries). prepare forks the
-session off its transcript (`claude -p --resume … --fork-session`) and writes
+**super-compact prepares the summary at 95%, on both hosts.** The trigger is a shell hook, not the
+mod: `scripts/precompact-watch.js` (PostToolUse + Stop, registered for both hosts) measures the
+context and, the first time it crosses 95% of the threshold, starts `scripts/precompact-prepare.js`
+exactly once (`O_EXCL` marker, up to 3 retries). Claude Code is measured the way the engine's
+auto-compact check does; Codex by its last `token_count` against `model_auto_compact_token_limit`.
+prepare forks the session (`claude -p --resume … --fork-session`; Codex `codex exec … fork <id>`,
+exec options BEFORE `fork` or they are refused) and writes
 `~/.claude/super-token-saver-data/.super-compact/<sid>.prepared.json`
-(`{status, summary, lastSeen, coveredLine}`). `coveredLine` is the transcript's line count when the
-fork began — every later line is newer than the summary. The summary prompt lives ONLY in
-`precompact-prepare.js`; the mod never forks.
+(`{status, summary, lastSeen, coveredLine, pid}`). `coveredLine` is the transcript's line count when
+the fork began — every later line is newer than the summary. **The summary instruction lives ONLY in
+`scripts/super-compact-prompt.txt`**, read by prepare and by the mod.
 
-| | ① CC, mod on | ② CC, mod off | ③ Codex / prep failed |
-|---|---|---|---|
-| 95% prepare | shell fork → `prepared.json` | same | none |
-| compaction | `hooks/super-compact.ts` (`session.compact`) reads `prepared.json`, rebuilds by `coveredLine` | engine default | engine default |
-| after-compact shell hook | consumes handled marker → injects only the pointer to `restore.md` | writes prepared summary + ledger dialogue to `restore.md` (`restore-ledger.js --prepared-json`) | `restore-ledger.js` as-is |
-| machine messages (teammate reports, subagent notices) | summary layer verbatim, out of the abbreviated dialogue | same | verbatim, re-injected (no summary layer) |
+- **The engine can compact far under the threshold it reports** (auto covers "prompt too long"):
+  measured, a claude-opus-4-8 session compacted at 242,405 tokens while the engine and the script
+  both said 517,000, so 95% never came. The watcher records where an auto-compaction really ran, per
+  model, in `.super-compact/observed-thresholds.json` and caps the threshold with it (Claude Code
+  only; a Codex `compacted` row carries no pre-compaction size).
+- **Compaction waits for a running preparation.** `scripts/precompact-wait.js` owns when to give up:
+  the marker stops running, its pid is gone, 5 minutes, or the fork's 10-minute timeout since arming.
+  The mod runs it through `$.process.run` (a `$.clock` wait spends the hook's 10 s budget). Without
+  the mod a `PreCompact` hook runs it (`--hook`, timeout 330 s); measured on Codex, compaction was
+  held 150 s and ran after.
 
-**super-compact is Claude Code-only** (2.1.287+). `hooks/hooks.json` lists the hooks module
-`hooks/super-compact.ts` under `modules` beside the shell `hooks` (older Claude Code strips the
-unknown key; `claude plugin validate` reads both). The mod rebuilds the conversation as: a summary
-message (section A = before the last compaction, section B = what the abbreviated dialogue loses,
-incl. one line per machine message); this span's dialogue, folded with `[L{n}]` pointers from
-`scripts/transcript-lines.js` (widened back to ≥10 human turns; teammate/subagent/idle messages
-left out); then the verbatim tail from `coveredLine`'s anchor (the last two full exchanges always
-inside it; a turn over `LONG_TURN_CAP` keeps its opening + an omission note + the steps past the
-anchor). When pointers are unavailable the compaction still runs without them; any exception falls
-back to core compaction. The mod writes the handled marker
-`~/.claude/super-token-saver-data/.super-compact/<sid>.json` (the ③-path hook consumes it if under
-300 s old → pointer only) and persists each compaction's summary to
-`<session cache>/super-compact/<n>.md`, which the next session's `/s-continue` loads (latest only;
-section A carries the rest). Gate: `claude plugin test .` (module, 15 tests) and the handled-marker
-checks in `scripts/test-restore-ledger.js`.
+| | ① CC, mod on | ② CC before 2.1.287 / Codex |
+|---|---|---|
+| 95% prepare | fork → `prepared.json` | same |
+| preparation still running | the mod waits | the `PreCompact` hook waits |
+| compaction | the mod: prepared summary; else summarizes then and there; else core untouched | engine default |
+| after-compact shell hook | handled marker → pointer to `restore.md` only; no marker → full ledger restore | ready prepared summary leads the restore (`restore-ledger.js --prepared-json`), then is marked consumed; else the ledger as-is |
+| machine messages (teammate reports, subagent notices) | summary layer verbatim, out of the abbreviated dialogue | summary layer when prepared, else re-injected verbatim |
+
+**The mod is Claude Code-only** (2.1.287+). `hooks/hooks.json` lists `hooks/super-compact.ts` under
+`modules` beside the shell `hooks` (older Claude Code strips the unknown key; `claude plugin
+validate` reads both). It handles `/compact` and auto-compaction alike and rebuilds the conversation
+as: a summary message (section A = before the last compaction, section B = what the abbreviated
+dialogue loses, incl. one line per machine message); this span's dialogue, folded with `[L{n}]`
+pointers from `scripts/transcript-lines.js` (widened back to ≥10 human turns; teammate/subagent/idle
+messages left out); then the verbatim tail from the anchor (the last two full exchanges always inside
+it; a turn over `LONG_TURN_CAP` keeps its opening + an omission note + the steps past the anchor).
+With no prepared summary the anchor is the last 5% of the conversation and the module summarizes the
+rest itself (`$.model.complete` on the session's model; a 400/413 refusal splits the request in two,
+the older half carried as a continuation summary). When that fails too it returns `next(e)`
+untouched and writes no handled marker.
+
+- **Never rebuild around core's result.** Core's summary is an engine message with a `handle`, so a
+  `!m.handle` filter drops it and the summary comes out empty (measured, three compactions in one
+  night). And core run inside the mod fires the after-compact hook before the mod has written the
+  handled marker (measured 46 ms earlier), so the restore was injected twice.
+
+The mod writes the handled marker `~/.claude/super-token-saver-data/.super-compact/<sid>.json` (the
+after-compact hook consumes it if under 300 s old → pointer only) and persists each compaction's
+summary to `<session cache>/super-compact/<n>.md`, which the next session's `/s-continue` loads
+(the latest one with text; section A carries the rest). Gates: `claude plugin test .` (module),
+`node scripts/test-precompact-watch.js` (watch, prepare, wait, Codex), and the handled-marker and
+path-② checks in `scripts/test-restore-ledger.js`.
 
 Codex agent dispatches and incoming agent envelopes use ledger-only normalized records. They do
 not become user turns in manual restoration or usage reports. Earlier Codex sessions are discovered

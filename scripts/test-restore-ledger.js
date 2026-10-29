@@ -225,6 +225,21 @@ fs.utimesSync(marker, stale, stale);
 hk = runHook(SID, transcript);
 check("stale handled marker ignored and removed", hk.ctx.startsWith("# Restored:") && !fs.existsSync(marker));
 
+// ── 4c'''. path 2 (no mod): a ready prepared summary leads the restore once, then is consumed ──
+
+const preparedFile = path.join(markerDir, `${SID}.prepared.json`);
+fs.writeFileSync(preparedFile, JSON.stringify({ status: "ready", summary: "## A\nPREPARED_SUMMARY_BODY\n## B\nx", coveredLine: 1 }));
+hk = runHook(SID, transcript);
+const preparedRestore = fs.readFileSync(restoreFile, "utf8");
+check("path 2: the prepared summary leads the restore", preparedRestore.includes("PREPARED_SUMMARY_BODY"));
+check("path 2: the prepared summary is consumed after use", JSON.parse(fs.readFileSync(preparedFile, "utf8")).status === "consumed");
+hk = runHook(SID, transcript);
+check("path 2: the next compaction does not lead with it again", !fs.readFileSync(restoreFile, "utf8").includes("PREPARED_SUMMARY_BODY"));
+fs.writeFileSync(preparedFile, JSON.stringify({ status: "running", pid: 1 }));
+hk = runHook(SID, transcript);
+check("path 2: a running preparation is left for the watcher", JSON.parse(fs.readFileSync(preparedFile, "utf8")).status === "running");
+fs.rmSync(preparedFile, { force: true });
+
 // ── 4d. a Codex rollout is normalized first and lands in the codex cache tree ─
 
 const codexHome = path.join(HOME, "codex-home");

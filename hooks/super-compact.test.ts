@@ -1,6 +1,15 @@
 import { expect, test } from 'claude-code/testing'
-import type { SessionMessage } from 'claude-code'
-import { alignLines, anchorFromCovered, assemble, type TranscriptPointer } from './super-compact'
+import type { ModelCompleteResult, SessionMessage } from 'claude-code'
+import {
+  alignLines,
+  anchorFromCovered,
+  assemble,
+  immediateAnchor,
+  summarizeMessages,
+  summaryRequest,
+  type Complete,
+  type TranscriptPointer,
+} from './super-compact'
 
 const HEAD = 'This session is being continued from a previous conversation that ran out of context.'
 const THRESHOLD = 520_000
@@ -299,10 +308,10 @@ test('an anchor on a tool result moves to the next step, its call omitted with i
   expect(noTwoAssistantsInARow(out)).toBe(true)
 })
 
-test('a long turn under a core summary keeps the question and notes every step', async () => {
+test('a long turn under a summary of the whole span keeps the question and notes every step', async () => {
   const msgs = longTurn(120, 2_000)
   const report: Record<string, unknown> = {}
-  const out = assemble(msgs, { text: 'S', source: 'core', anchor: msgs.length }, THRESHOLD, report)
+  const out = assemble(msgs, { text: 'S', source: 'immediate', anchor: msgs.length }, THRESHOLD, report)
 
   expect(out.map(m => m.handle)).toEqual([undefined, 'h0', undefined])
   expect(out[2]!.role).toBe('assistant')
@@ -327,3 +336,57 @@ test('only the span after the last compaction is re-attached as the tail; the su
   // the tail is the post-boundary span, verbatim.
   expect(out.slice(-2).map(m => m.handle)).toEqual(['h3', 'h4'])
 })
+
+// ───────────────────────────── immediate summary ─────────────────────────────
+
+const answered = (text: string) => ({ isAnswered: true, text, usage: {} }) as unknown as ModelCompleteResult
+const refused = (status: number) => ({ isAnswered: false, reason: 'api-error', status, usage: {} }) as unknown as ModelCompleteResult
+
+test('the immediate tail is the last 5% of the conversation and starts on a step boundary', async () => {
+  const msgs = longTurn(60, 2_000)
+  const anchor = immediateAnchor(msgs)
+
+  expect(anchor).toBeGreaterThan(msgs.length * 0.9)
+  expect(anchor < msgs.length).toBe(true)
+  // never on a tool result: its call would be summarized and the result kept verbatim alone.
+  expect(msgs[anchor]!.role).toBe('assistant')
+})
+
+test('the immediate summary drops the LAST SEEN line the instruction asks for', async () => {
+  const report: Record<string, unknown> = {}
+  const complete: Complete = async () => answered('## A\nold\n## B\nnew\nLAST SEEN: the last line')
+
+  expect(await summarizeMessages(exchanges(3), 'INSTRUCTION', complete, report)).toBe('## A\nold\n## B\nnew')
+  expect(report.immediateRequests).toBe(1)
+})
+
+test('a request refused as too long is split, the older half carried as a continuation summary', async () => {
+  const msgs = exchanges(8)
+  const prompts: string[] = []
+  const limit = summaryRequest(msgs, 'INSTRUCTION').length * 0.7
+  const complete: Complete = async prompt => {
+    prompts.push(prompt)
+    return prompt.length > limit ? refused(400) : answered(`SUMMARY ${prompts.length}\nLAST SEEN: x`)
+  }
+  const report: Record<string, unknown> = {}
+
+  const text = await summarizeMessages(msgs, 'INSTRUCTION', complete, report)
+
+  expect(text).toBe('SUMMARY 3')
+  expect(prompts.length).toBe(3)
+  // the newer half's request opens with the older half's summary as a continuation message.
+  expect(prompts[2]!.includes(`${HEAD}\n\nSUMMARY 2`)).toBe(true)
+  expect(prompts[2]!.includes('question 0 ')).toBe(false)
+  expect(prompts[2]!.includes('question 7 ')).toBe(true)
+})
+
+test('any other refusal gives no summary and no split', async () => {
+  const report: Record<string, unknown> = {}
+  let calls = 0
+  const complete: Complete = async () => (calls++, refused(529))
+
+  expect(await summarizeMessages(exchanges(8), 'INSTRUCTION', complete, report)).toBe(undefined)
+  expect(calls).toBe(1)
+  expect(report.immediateFailure).toBe('api-error 529')
+})
+

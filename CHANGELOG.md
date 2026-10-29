@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.0] - 2026-10-30
+
+### Fixed: super-compact no longer compacts to an empty summary
+
+- When no prepared summary was ready, the module rebuilt the conversation around the engine's own
+  summary but dropped it, so the conversation continued under an empty summary (three real
+  compactions in one night). It now summarizes the conversation itself at that moment — everything
+  but the last ~5%, which stays verbatim — on the session's own model; a request refused as too
+  long is split in two. If that fails too, the engine's compaction stands untouched and the
+  after-compact restore runs in full. `/compact` takes the same path.
+- The restore is no longer injected twice. Running the engine's compaction inside the module fired
+  the after-compact hook before the module said it had handled the compaction.
+- An empty summary is no longer saved, and `/s-continue` skips any saved summary without text.
+
+### Added: compaction waits for a summary still being prepared
+
+- A compaction that arrives while the 95% summary is still being written waits for it, up to 5
+  minutes. If the preparing process has died, the wait ends at once. Claude Code with the mod waits
+  inside the module; without the mod, and on Codex, a `PreCompact` hook waits.
+
+### Added: super-compact preparation on Codex
+
+- At 95% of `model_auto_compact_token_limit`, Codex now forks the session (`codex exec … fork`) and
+  writes the same prepared summary; the after-compact restore leads with it. Measured: a 59K-token
+  fork finished in 28.5 s and read 50K tokens from cache.
+
+### Fixed: preparation starts in time when the engine compacts early
+
+- The engine can compact well under the threshold it reports. Measured: one session compacted at
+  242,405 tokens against a reported 517,000, so 95% never came. The point an auto-compaction really
+  ran at is now recorded per model and used as the threshold from then on.
+- A prepared summary used by the after-compact restore is marked consumed, so a later compaction
+  does not lead with it again.
+
 ## [3.8.0] - 2026-10-28
 
 ### Added: super-compact — pre-emptive compaction that keeps the conversation (Claude Code)

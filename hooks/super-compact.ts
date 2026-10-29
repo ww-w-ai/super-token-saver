@@ -1,5 +1,6 @@
 import type {
   EngineInterface,
+  ModelCompleteResult,
   Next,
   Register,
   SessionCompactInput,
@@ -16,7 +17,12 @@ import type {
  *   <data>/.super-compact/<session id>.prepared.json  { status:"ready", summary, lastSeen, coveredLine }
  * coveredLine is the transcript's line count when the fork began: every JSONL line after it is newer
  * than the summary. This module only READS that file at compaction; it never forks (an older design
- * forked here too, which double-forked once the shell trigger landed).
+ * forked here too, which double-forked once the shell trigger landed). A compaction that arrives while
+ * the preparation is still running waits for it (scripts/precompact-wait.js decides how long). With no ready summary (none
+ * started, failed, still running, or a /compact before 95%) the module summarizes the conversation
+ * itself at that moment, all but its last IMMEDIATE_TAIL_FRACTION, with the same instruction
+ * (PROMPT_FILE); a request refused as too long is split in two. When that fails too, core's
+ * compaction stands untouched and no handled marker is written, so the shell restore runs.
  *
  * When compaction runs, the conversation becomes, oldest first:
  *   1. one user message in the shape core's own summary takes: everything before the last
@@ -53,6 +59,21 @@ const MIN_TURNS = 10
 /** With no human turn in the span, the tail may start up to this many steps back, at an explanation. */
 const WALK_BACK_STEPS = 3
 const TRANSCRIPT_LINES_TIMEOUT_MS = 60_000
+/**
+ * How long the wait process for a running preparation may run. When to stop waiting is decided by
+ * scripts/precompact-wait.js (its WAIT_CAP_MS, 5 min); this is only that cap plus a margin, so a
+ * stuck process cannot hold compaction past it.
+ */
+const PREPARED_WAIT_PROCESS_MS = 5 * 60_000 + 15_000
+/** With no prepared summary at compaction, this share of the conversation stays verbatim at the end. */
+const IMMEDIATE_TAIL_FRACTION = 0.05
+/** How long one immediate summary request may take before compaction falls back to core. */
+const IMMEDIATE_TIMEOUT_MS = 5 * 60_000
+/** A summary request refused as too long is split in two, at most this many levels deep. */
+const IMMEDIATE_MAX_SPLITS = 3
+const IMMEDIATE_MAX_TOKENS = 16_000
+/** The summary instruction, shared with scripts/precompact-prepare.js. */
+const PROMPT_FILE = 'scripts/super-compact-prompt.txt'
 
 /** Core's own summary message opens with this; a later compaction finds the previous one by it. */
 const CONTINUATION_HEAD =
@@ -358,7 +379,7 @@ function seamDialogue(dialogue: SessionMessage[], tail: readonly SessionMessage[
 
 // ───────────────────────────── compacting ─────────────────────────────
 
-type Summary = { text: string; source: 'prepared' | 'core'; anchor: number; lastSeen?: string }
+type Summary = { text: string; source: 'prepared' | 'immediate'; anchor: number; lastSeen?: string }
 
 function continuationFoot(transcript: TranscriptPointer | undefined): string {
   const where = transcript
@@ -403,6 +424,98 @@ export function assemble(
     transcriptPath: transcript?.path ?? null,
   })
   return [head, ...dialogue, ...tail.messages]
+}
+
+// ───────────────────────────── immediate summary ─────────────────────────────
+
+/**
+ * Where the verbatim tail starts when the module summarizes at compaction: the last
+ * IMMEDIATE_TAIL_FRACTION of the conversation's tokens, moved back to a step boundary so a tool
+ * call and its result are never split.
+ */
+export function immediateAnchor(msgs: readonly SessionMessage[]): number {
+  const budget = IMMEDIATE_TAIL_FRACTION * sumTokens(msgs)
+  let i = msgs.length
+  let kept = 0
+  while (i > 0 && kept + messageTokens(msgs[i - 1]!) <= budget) kept += messageTokens(msgs[--i]!)
+  while (i > 0 && i < msgs.length && !isStepBoundary(msgs[i]!)) i--
+  return i
+}
+
+/** One message as the summarizer reads it: its text, each tool call with its input, each result whole. */
+function renderForSummary(m: SessionMessage): string {
+  const parts = [m.text.trim()]
+  for (const u of m.toolUses) parts.push(`[tool call ${u.tool}] ${JSON.stringify(u.input ?? {})}`)
+  for (const r of m.toolResults ?? []) parts.push(`[tool result${r.isError ? ', error' : ''}] ${r.text}`)
+  return `### ${m.role}\n${parts.filter(p => p !== '').join('\n')}`
+}
+
+/** The request: the conversation to summarize, then the shared instruction. */
+export function summaryRequest(msgs: readonly SessionMessage[], instruction: string): string {
+  const body = msgs.map(renderForSummary).join('\n\n')
+  return `<conversation>\n${body}\n</conversation>\n\nThe conversation above is the one to summarize.\n\n${instruction}`
+}
+
+/** The summary without the instruction's closing LAST SEEN line, which only the prepared path reads. */
+const stripLastSeen = (text: string) => text.trimEnd().replace(/\n?LAST SEEN:[^\n]*$/, '').trim()
+
+/** Where a request is cut in two: the step boundary at or before the middle, never the first message. */
+function splitPoint(msgs: readonly SessionMessage[]): number {
+  let i = Math.floor(msgs.length / 2)
+  while (i > 1 && !isStepBoundary(msgs[i]!)) i--
+  return Math.max(1, i)
+}
+
+export type Complete = (prompt: string) => Promise<ModelCompleteResult>
+
+/** A refusal a shorter request may pass: the API's 400 (prompt too long) or 413. */
+const isTooLong = (r: ModelCompleteResult) =>
+  !r.isAnswered && r.reason === 'api-error' && (r.status === 400 || r.status === 413)
+
+/**
+ * The summary of `msgs`, or undefined. A request refused as too long is cut in two: the older half
+ * is summarized first and carried, as a continuation summary, in front of the newer half — the
+ * instruction's section A is written for exactly that message.
+ */
+export async function summarizeMessages(
+  msgs: readonly SessionMessage[],
+  instruction: string,
+  complete: Complete,
+  report: Report,
+  depth = 0,
+): Promise<string | undefined> {
+  const r = await complete(summaryRequest(msgs, instruction))
+  report.immediateRequests = ((report.immediateRequests as number | undefined) ?? 0) + 1
+  if (r.isAnswered) return stripLastSeen(r.text) || undefined
+  report.immediateFailure = r.reason === 'api-error' ? `api-error ${r.status}` : r.reason
+  if (!isTooLong(r) || depth >= IMMEDIATE_MAX_SPLITS || msgs.length < 2) return undefined
+  const mid = splitPoint(msgs)
+  const older = await summarizeMessages(msgs.slice(0, mid), instruction, complete, report, depth + 1)
+  if (!older) return undefined
+  const carried: SessionMessage = { role: 'user', text: `${CONTINUATION_HEAD}\n\n${older}`, toolUses: [] }
+  return summarizeMessages([carried, ...msgs.slice(mid)], instruction, complete, report, depth + 1)
+}
+
+/** Summarizes `msgs` now, on the session's own model; undefined when no summary came back. */
+async function summarizeNow($: EngineInterface, msgs: readonly SessionMessage[], report: Report): Promise<string | undefined> {
+  if (msgs.length === 0) {
+    report.immediateFailure = 'nothing-before-tail'
+    return undefined
+  }
+  const startedAt = await $.clock.now()
+  try {
+    const instruction = (await $.fs.read(`${$.plugin.root}/${PROMPT_FILE}`)).trimEnd()
+    const model = await $.session.model()
+    report.immediateModel = model
+    const complete: Complete = prompt =>
+      $.model.complete({ model, prompt, maxTokens: IMMEDIATE_MAX_TOKENS, timeoutMs: IMMEDIATE_TIMEOUT_MS })
+    return await summarizeMessages(msgs, instruction, complete, report)
+  } catch (err) {
+    report.immediateFailure = `refused: ${String(err).slice(0, 200)}`
+    return undefined
+  } finally {
+    report.immediateMs = (await $.clock.now()) - startedAt
+  }
 }
 
 async function readThreshold($: EngineInterface): Promise<number | undefined> {
@@ -455,6 +568,27 @@ async function readPrepared($: EngineInterface): Promise<Prepared | undefined> {
   }
 }
 
+/**
+ * The prepared file once its preparation stops running. The wait runs in scripts/precompact-wait.js,
+ * which owns when to give up: a $.clock wait would spend the hook's 10 s budget, a process the hook
+ * waits on does not.
+ */
+async function awaitPrepared($: EngineInterface, prep: Prepared | undefined, report: Report): Promise<Prepared | undefined> {
+  if (prep?.status !== 'running') return prep
+  const path = await preparedPath($)
+  if (!path) return prep
+  const startedAt = await $.clock.now()
+  try {
+    const script = `${$.plugin.root}/scripts/precompact-wait.js`
+    const run = await $.process.run(['node', script, path], { timeoutMs: PREPARED_WAIT_PROCESS_MS })
+    report.preparedWaitResult = run.stdout.trim()
+  } catch (err) {
+    report.preparedWaitError = String(err).slice(0, 200)
+  }
+  report.preparedWaitMs = (await $.clock.now()) - startedAt
+  return readPrepared($)
+}
+
 /** Marks the prepared file consumed so a second compaction cannot reuse the same summary. */
 async function clearPrepared($: EngineInterface): Promise<void> {
   const path = await preparedPath($)
@@ -469,7 +603,7 @@ async function clearPrepared($: EngineInterface): Promise<void> {
 /** Persists this compaction's summary to <session cache>/super-compact/<n>.md for next session's /s-continue. */
 async function persistSummary($: EngineInterface, msgs: readonly SessionMessage[], summaryText: string, transcript: TranscriptPointer | undefined, report: Report): Promise<void> {
   const home = await $.env.get('HOME')
-  if (!home || !transcript) {
+  if (!home || !transcript || !summaryText.trim()) {
     report.summaryPersisted = false
     return
   }
@@ -500,10 +634,10 @@ async function writeReport($: EngineInterface, report: Report): Promise<string |
 
 async function compact($: EngineInterface, e: SessionCompactInput, next: Next<'session.compact'>): Promise<SessionCompactResult> {
   const threshold = (await readThreshold($)) ?? 0
-  const prep = await readPrepared($)
+  const report: Report = { trigger: e.trigger, threshold }
+  const prep = await awaitPrepared($, await readPrepared($), report)
   const transcript = await readTranscript($, e.messages)
   const pointer = typeof transcript === 'string' ? undefined : transcript
-  const report: Report = { trigger: e.trigger, threshold }
   const ready = prep?.status === 'ready' && !!prep.summary && typeof prep.coveredLine === 'number'
 
   let summary: Summary
@@ -512,13 +646,19 @@ async function compact($: EngineInterface, e: SessionCompactInput, next: Next<'s
     summary = { text: prep!.summary!, source: 'prepared', anchor, lastSeen: prep!.lastSeen }
     report.coveredLine = prep!.coveredLine
   } else {
-    const core = await next(e)
-    if (core.skip !== undefined) return core
-    const text = core.messages.filter(m => !m.handle).map(m => m.text).join('\n\n').trim()
-    summary = { text, source: 'core', anchor: e.messages.length }
     report.preparedStatus = prep?.status ?? 'absent'
     if (prep?.reason) report.preparedReason = prep.reason
     if (ready && !pointer) report.preparedFallback = 'transcript-unavailable'
+    const anchor = immediateAnchor(e.messages)
+    const text = await summarizeNow($, e.messages.slice(0, anchor), report)
+    // Core's compaction stands untouched and no handled marker is written, so the after-compact
+    // shell hook runs its full restore: nothing is put back twice.
+    if (!text) {
+      await clearPrepared($)
+      $.ui.log(`super-compact: no summary (${report.immediateFailure ?? 'unknown'}); core compaction stands`)
+      return next(e)
+    }
+    summary = { text, source: 'immediate', anchor }
   }
 
   report.source = summary.source

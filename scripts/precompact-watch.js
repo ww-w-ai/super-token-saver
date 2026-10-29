@@ -16,6 +16,8 @@
  *   window = CLAUDE_CODE_AUTO_COMPACT_WINDOW, else settings autoCompactWindow, else the model window,
  *   capped by the model window; minus min(max output, 20,000); minus 13,000
  *   (CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: min(floor(effective * pct / 100), effective - 13,000)).
+ *   Capped by the context size an auto-compaction of the same model actually ran at, when lower
+ *   (<data>/.super-compact/observed-thresholds.json; see "observed thresholds" below).
  *
  * Exactly once per compaction: the marker <data>/.super-compact/<sid>.prepared.json is created with
  * O_EXCL, so of several hooks firing at once (parallel tool calls) one wins. A failed preparation is
@@ -42,8 +44,15 @@ const DEFAULT_WINDOW = 200_000;
 const ONE_M_WINDOW = 1_000_000;
 const IMAGE_TOKENS = 2_000;
 
+const BOUNDARY_START_BYTES = 256 * 1024;
+const BOUNDARY_MAX_BYTES = 64 * 1024 * 1024;
+
 const dataDir = (home) => path.join(home, ".claude", "super-token-saver-data", ".super-compact");
 const markerPath = (home, sid) => path.join(dataDir(home), `${sid}.prepared.json`);
+/** This session's last measurement; a later one under half of it means a compaction ran between. */
+const seenPath = (home, sid) => path.join(dataDir(home), `${sid}.seen.json`);
+/** Per model, the context size an auto-compaction actually ran at when that was under the threshold. */
+const observedPath = (home) => path.join(dataDir(home), "observed-thresholds.json");
 
 // ───────────────────────────── context size ─────────────────────────────
 
@@ -143,14 +152,67 @@ function tailRows(fd, size, bytes) {
   return { rows, complete: start === 0 };
 }
 
+// ───────────────────────────── Codex ─────────────────────────────
+//
+// A Codex rollout opens with a session_meta row and reports each response's size in an event_msg
+// token_count row: last_token_usage is the request just sent plus its reply, model_context_window
+// the model's window. Its auto-compact limit is model_auto_compact_token_limit in config.toml.
+
+const CODEX_HEAD_BYTES = 256;
+const CODEX_WINDOW_FRACTION = 0.9;
+
+/** True when the transcript is a Codex rollout: its first row is session_meta. */
+function isCodexRollout(transcript) {
+  let fd;
+  try {
+    fd = fs.openSync(transcript, "r");
+    const buf = Buffer.alloc(CODEX_HEAD_BYTES);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    return /"type":"session_meta"/.test(buf.toString("utf8", 0, n));
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+const codexRowTokens = (row) => (row.type === "response_item" ? rough(JSON.stringify(row.payload ?? {})) : 0);
+
+/** The context size of a Codex rollout: the last non-empty token_count plus the rows written after it. */
+function codexContextTokens(rows, complete) {
+  let model;
+  for (const r of rows) if (r.type === "turn_context" && r.payload?.model) model = r.payload.model;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const info = rows[i].type === "event_msg" && rows[i].payload?.type === "token_count" ? rows[i].payload.info : undefined;
+    const u = info?.last_token_usage;
+    if (!u || !(u.input_tokens > 0)) continue;
+    let after = 0;
+    for (let k = i + 1; k < rows.length; k++) after += codexRowTokens(rows[k]);
+    return { tokens: u.input_tokens + (u.output_tokens ?? 0) + after, model, window: info.model_context_window, rows: [] };
+  }
+  return complete ? { tokens: 0, model, rows: [] } : undefined;
+}
+
+/** Codex's auto-compact limit: the top-level config.toml key, else a share of the model's window. */
+function codexThreshold(env, home, window) {
+  const config = path.join(env.CODEX_HOME || path.join(home, ".codex"), "config.toml");
+  let text = "";
+  try { text = fs.readFileSync(config, "utf8"); } catch { /* no config */ }
+  const topLevel = text.split(/^\s*\[/m)[0];
+  const m = /^\s*model_auto_compact_token_limit\s*=\s*(\d+)/m.exec(topLevel);
+  if (m) return { threshold: Number(m[1]), window, source: "codex-config" };
+  if (positiveInt(window)) return { threshold: Math.floor(CODEX_WINDOW_FRACTION * window), window, source: "codex-window" };
+  return { threshold: DEFAULT_WINDOW - MAX_OUTPUT_CAP - AUTOCOMPACT_BUFFER, window: DEFAULT_WINDOW, source: "default" };
+}
+
 /** Context size from the transcript tail, doubling the window until the anchor is whole. */
-function measureTranscript(transcript) {
+function measureTranscript(transcript, measure = contextTokens) {
   const fd = fs.openSync(transcript, "r");
   try {
     const size = fs.fstatSync(fd).size;
     for (let bytes = TAIL_START_BYTES; ; bytes *= 2) {
       const { rows, complete } = tailRows(fd, size, bytes);
-      const measured = contextTokens(rows, complete);
+      const measured = measure(rows, complete);
       if (measured) return measured;
       if (complete) return { tokens: 0, model: undefined, rows: [] };
     }
@@ -218,6 +280,62 @@ function autoCompactThreshold({ env, settings, model }) {
   return { threshold, window, source };
 }
 
+// ───────────────────────── observed thresholds ─────────────────────────
+//
+// The engine can auto-compact well under the threshold it computes and reports: measured, a
+// claude-opus-4-8 session compacted at 242,405 tokens while both this script and the engine's own
+// usage breakdown put the threshold at 517,000, so the 95% crossing never came. The point a
+// compaction really ran at is recorded per model and caps the computed threshold from then on.
+
+/** The newest compact_boundary row's compactMetadata, read from the transcript's end. */
+function lastBoundary(transcript) {
+  const fd = fs.openSync(transcript, "r");
+  try {
+    const size = fs.fstatSync(fd).size;
+    for (let bytes = BOUNDARY_START_BYTES; ; bytes *= 2) {
+      const { rows, complete } = tailRows(fd, size, Math.min(bytes, BOUNDARY_MAX_BYTES));
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].type === "system" && rows[i].subtype === "compact_boundary") return rows[i].compactMetadata ?? {};
+      }
+      if (complete || bytes >= BOUNDARY_MAX_BYTES) return undefined;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function writeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+/**
+ * Records this measurement and, when it fell under half the previous one, reads the compaction
+ * that ran between. An auto-compaction under ARM_FRACTION of the computed threshold sets the model's
+ * observed threshold; one at or past it removes the entry, so a model whose limit grew stops arming
+ * early. Manual compactions say nothing about the limit and are ignored.
+ */
+function learnFromCompaction({ home, sid, transcript, tokens, model, computed, now }) {
+  const prev = readJson(seenPath(home, sid));
+  writeJson(seenPath(home, sid), { tokens, model: model ?? prev?.model ?? null, at: now });
+  if (!prev || !(tokens < REARM_FRACTION * prev.tokens)) return;
+  const meta = lastBoundary(transcript);
+  const key = prev.model ?? model;
+  if (!meta || meta.trigger !== "auto" || !positiveInt(meta.preTokens) || !key) return;
+  const observed = readJson(observedPath(home)) ?? {};
+  if (meta.preTokens < ARM_FRACTION * computed) observed[key] = { preTokens: meta.preTokens, at: now, sessionId: sid };
+  else delete observed[key];
+  writeJson(observedPath(home), observed);
+}
+
+/** The computed threshold, capped by the model's observed one when that is lower. */
+function withObserved(computed, home, model) {
+  const seen = model ? readJson(observedPath(home))?.[model]?.preTokens : undefined;
+  return positiveInt(seen) && seen < computed.threshold ? { ...computed, threshold: seen, source: "observed" } : computed;
+}
+
 const autoCompactOff = (env, home) =>
   !!(env.DISABLE_AUTO_COMPACT || env.DISABLE_COMPACT) || readJson(path.join(home, ".claude.json"))?.autoCompactEnabled === false;
 
@@ -247,6 +365,21 @@ const isRetryable = (m, now) =>
   m && (m.status === "failed" || (m.status === "running" && now - (m.armedAt ?? 0) > RUNNING_STALE_MS)) &&
   (m.attempts ?? 1) < MAX_ATTEMPTS;
 
+/** Claude Code: tokenCountWithEstimation against the engine threshold, capped by the observed one. */
+function measureClaude({ input, transcript, env, home, sid, now }) {
+  const measured = measureTranscript(transcript);
+  const tokens = measured.tokens + pendingToolTokens(input, measured.rows);
+  const computed = autoCompactThreshold({ env, settings: loadSettings(home, input.cwd), model: measured.model });
+  learnFromCompaction({ home, sid, transcript, tokens, model: measured.model, computed: computed.threshold, now });
+  return { tokens, ...withObserved(computed, home, measured.model) };
+}
+
+/** Codex: the last token_count against its auto-compact limit. */
+function measureCodex({ transcript, env, home }) {
+  const measured = measureTranscript(transcript, codexContextTokens);
+  return { tokens: measured.tokens, ...codexThreshold(env, home, measured.window) };
+}
+
 /**
  * The decision for one hook call. Returns what happened: "below", "rearmed", "armed", "retried",
  * "held" (a marker already covers this compaction) or a skip reason.
@@ -257,11 +390,12 @@ function decide({ input, env, home, now, launch }) {
   const sid = input.session_id;
   const transcript = input.transcript_path;
   if (!sid || !transcript || !fs.existsSync(transcript)) return "skip:no-transcript";
-  if (autoCompactOff(env, home)) return "skip:auto-compact-off";
+  const host = isCodexRollout(transcript) ? "codex" : "claude";
+  if (host === "claude" && autoCompactOff(env, home)) return "skip:auto-compact-off";
 
-  const measured = measureTranscript(transcript);
-  const tokens = measured.tokens + pendingToolTokens(input, measured.rows);
-  const { threshold, source } = autoCompactThreshold({ env, settings: loadSettings(home, input.cwd), model: measured.model });
+  const { tokens, threshold, source } = host === "codex"
+    ? measureCodex({ transcript, env, home })
+    : measureClaude({ input, transcript, env, home, sid, now });
   const file = markerPath(home, sid);
 
   if (tokens < ARM_FRACTION * threshold) {
@@ -275,21 +409,21 @@ function decide({ input, env, home, now, launch }) {
 
   const body = (attempts) => ({ status: "running", attempts, armedAt: now, tokens, threshold, thresholdSource: source, event: input.hook_event_name });
   if (createMarker(file, body(1))) {
-    launch({ sid, transcript, cwd: input.cwd, marker: file });
+    launch({ sid, transcript, cwd: input.cwd, marker: file, host });
     return "armed";
   }
   const current = readJson(file);
   if (!isRetryable(current, now)) return "held";
   const previous = claimRetry(file);
   if (!isRetryable(previous, now) || !createMarker(file, body((previous.attempts ?? 1) + 1))) return "held";
-  launch({ sid, transcript, cwd: input.cwd, marker: file });
+  launch({ sid, transcript, cwd: input.cwd, marker: file, host });
   return "retried";
 }
 
 /** Starts the preparation detached; SUPER_COMPACT_FORK keeps the fork's own hooks from arming again. */
-function launchPreparer({ sid, transcript, cwd, marker }) {
+function launchPreparer({ sid, transcript, cwd, marker, host }) {
   const script = process.env.SUPER_COMPACT_PREPARER || path.join(__dirname, "precompact-prepare.js");
-  const child = spawn(process.execPath, [script, sid, transcript, cwd || process.cwd(), marker], {
+  const child = spawn(process.execPath, [script, sid, transcript, cwd || process.cwd(), marker, host], {
     detached: true,
     stdio: "ignore",
     cwd: cwd || process.cwd(),
@@ -311,4 +445,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { contextTokens, measureTranscript, pendingToolTokens, autoCompactThreshold, decide, markerPath, ARM_FRACTION, REARM_FRACTION, MAX_ATTEMPTS };
+module.exports = { contextTokens, codexContextTokens, codexThreshold, isCodexRollout, measureTranscript, pendingToolTokens, autoCompactThreshold, decide, markerPath, observedPath, ARM_FRACTION, REARM_FRACTION, MAX_ATTEMPTS };

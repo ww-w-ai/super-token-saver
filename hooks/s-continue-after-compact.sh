@@ -115,9 +115,31 @@ def restored(handled):
     if run.returncode != 0:
         return None
     text = run.stdout.strip()
+    if text and not handled:
+        consume_prepared()
     # An empty restore is a failure, not a result: announcing one that carried
     # nothing is worse than falling back to asking for it.
     return text if text else None
+
+
+def consume_prepared():
+    """Marks a ready prepared summary consumed once a restore has carried it.
+
+    The mod does this itself (path 1). Without it (path 2: Claude Code before 2.1.287, Codex) the
+    file stayed "ready" until the watcher next saw the context under half the threshold, so a
+    compaction before that would have led with the same, older summary again. A running or failed
+    marker is left alone: the watcher retries those.
+    """
+    try:
+        with open(prepared_marker) as f:
+            if json.load(f).get("status") != "ready":
+                return
+        tmp = f"{prepared_marker}.tmp-{os.getpid()}"
+        with open(tmp, "w") as f:
+            json.dump({"status": "consumed", "consumedAt": int(time.time() * 1000)}, f)
+        os.replace(tmp, prepared_marker)
+    except Exception:
+        pass
 
 
 def instruction():

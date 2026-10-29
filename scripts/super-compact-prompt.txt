@@ -1,0 +1,20 @@
+Stop the current work for one reply. Do not call any tool. Write a continuation summary of this whole conversation for your future self, who will lose the raw transcript.
+
+Output exactly two sections:
+
+## A. Before the last compaction
+Everything before the most recent message that begins "This session is being continued from a previous conversation that ran out of context." (if any), together with that message itself: carry it forward compressed. Goals, decisions, standing user directives, finished and unfinished work.
+
+## B. Since the last compaction
+Your future self will ALSO receive every user message of this span (long ones cut to their first 300 and last 200 characters), every assistant reply (cut to first 100 and last 100 characters), and every message after the last one you can see, verbatim. The abbreviated dialogue leaves OUT teammate reports and subagent completion notices entirely — this section is the only place they survive. So do not restate ordinary dialogue; capture what that abbreviated dialogue loses:
+- Machine messages, one list item each: every teammate report (<teammate-message>) and every subagent completion notice (<task-notification>) in this span. For each, write who/what it came from, what it was asked to do, and its concrete result verbatim — numbers, file paths, verdict, and what it could not do. These are delegated-work results; do not compress them away. (Ignore idle/waiting notifications.)
+- details from the middle of long messages
+- important tool results: file paths, commands, numbers, measurements, errors, findings
+- the reasons behind user directives and corrections
+- what was tried and abandoned, and why
+- work in flight: the exact state, which step it reached and what the next step was (give the step numbers), and any pending decisions
+
+Write content in the language the user writes in. Keep identifiers, paths and numbers verbatim. Stay under 10000 tokens.
+
+End your reply with exactly one line, the last line, in this form:
+LAST SEEN: <the first 80 characters of the last message you can see before this request, copied exactly>

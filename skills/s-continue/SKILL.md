@@ -488,12 +488,13 @@ notices verbatim, tool-output numbers, and the reasons behind directives. The `/
 restore deliberately leaves teammate messages, subagent notices and idle notifications out of
 `compact.txt`, so this summary is the only place that content survives for those spans.
 
-For each restored session, load ONLY the highest-numbered file — its section A already carries every
-earlier compaction, so the latest one is enough:
+For each restored session, load ONLY the highest-numbered file that has text — its section A already
+carries every earlier compaction, so the latest one is enough. A file holding only whitespace carries
+no summary and is skipped:
 
 ```bash
 SC_DIR="${HOME}/.claude/super-token-saver-data/${PROJECT_HASH}/${SESSION_ID}/super-compact"
-LATEST=$(ls "${SC_DIR}"/[0-9]*.md 2>/dev/null | sort -t/ -k1 -V | tail -1)
+LATEST=$(for f in $(ls "${SC_DIR}"/[0-9]*.md 2>/dev/null | sort -V); do grep -q '[^[:space:]]' "$f" && echo "$f"; done | tail -1)
 [ -n "${LATEST}" ] && echo "FOUND ${LATEST}" || echo "none"
 ```
 

@@ -144,6 +144,41 @@ fs.writeFileSync(marker, JSON.stringify({ status: "running", attempts: 1, armedA
 writeTranscript(Math.floor(0.3 * THRESHOLD));
 check("a running marker is never cleared", decide() === "below" && fs.existsSync(marker));
 
+// ── observed thresholds: an auto-compaction under the computed threshold caps it per model ──
+{
+  const sid = "99999999-2222-3333-4444-555555555555";
+  const file = path.join(ROOT, "obs.jsonl");
+  const obsMarker = W.markerPath(HOME, sid);
+  const write = (tokens, boundary) => fs.writeFileSync(file, [
+    user("go"),
+    ...(boundary ? [{ type: "system", subtype: "compact_boundary", compactMetadata: boundary }] : []),
+    asst("m-" + tokens, [{ type: "text", text: "" }], usage(0, tokens, 0, 0)),
+  ].map((r) => JSON.stringify(r)).join("\n") + "\n");
+  const run = () => W.decide({ input: { ...stopInput, session_id: sid, transcript_path: file }, env: {}, home: HOME, now: Date.now(), launch: () => launches++ });
+  const observed = () => (JSON.parse(fs.readFileSync(W.observedPath(HOME), "utf8"))["claude-opus-5-5"] ?? {}).preTokens;
+
+  write(242405);
+  check("under the computed threshold nothing arms", run() === "below");
+  write(65000, { trigger: "auto", preTokens: 242405 });
+  run();
+  check("an auto-compaction at 242,405 is recorded for the model", observed() === 242405, `got ${observed()}`);
+  write(Math.ceil(0.95 * 242405));
+  check("the next crossing arms at 95% of the observed point", run() === "armed" && JSON.parse(fs.readFileSync(obsMarker, "utf8")).threshold === 242405);
+
+  fs.rmSync(obsMarker, { force: true });
+  write(230000);
+  run();
+  write(40000, { trigger: "manual", preTokens: 100000 });
+  run();
+  check("a manual compaction does not move the observed point", observed() === 242405, `got ${observed()}`);
+
+  write(500000);
+  run();
+  write(60000, { trigger: "auto", preTokens: 500000 });
+  run();
+  check("an auto-compaction at the computed threshold removes the entry", observed() === undefined, `got ${observed()}`);
+}
+
 // ── 8 hooks at once, real processes ──
 async function concurrent() {
   fs.rmSync(marker, { force: true });
@@ -189,7 +224,89 @@ process.stdout.write(JSON.stringify(fail ? { is_error: true, result: "boom" } : 
     JSON.stringify(ready));
   spawnSync(process.execPath, [PREPARE, SID, TRANSCRIPT, CWD, marker], { env: { ...process.env, SUPER_COMPACT_CLAUDE: fake, FAKE_FAIL: "1" } });
   const failed = JSON.parse(fs.readFileSync(marker, "utf8"));
-  check("a failed fork writes failed with its reason", failed.status === "failed" && failed.reason === "boom", JSON.stringify(failed));
+  check("a failed fork writes failed with its reason", failed.status === "failed" && failed.reason === "exit 0: boom", JSON.stringify(failed));
+  check("the preparer records its own pid", Number.isInteger(ready.pid) && ready.pid > 0, JSON.stringify(ready));
+}
+
+// ── Codex: rollout detection, token_count measurement, config threshold, fork preparation ──
+{
+  const CHOME = path.join(ROOT, "codex-home");
+  fs.mkdirSync(CHOME, { recursive: true });
+  const sid = "01a188af-0000-7000-8000-000000000001";
+  const rollout = path.join(ROOT, "rollout.jsonl");
+  const tokenCount = (input, output) => ({ type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { input_tokens: input, output_tokens: output }, model_context_window: 828400 } } });
+  const writeRollout = (input) => fs.writeFileSync(rollout, [
+    { timestamp: "t", ordinal: 0, type: "session_meta", payload: { id: sid, session_id: sid } },
+    { type: "turn_context", payload: { model: "gpt-6-astra" } },
+    tokenCount(input, 500),
+    tokenCount(0, 0),
+  ].map((r) => JSON.stringify(r)).join("\n") + "\n");
+
+  writeRollout(100000);
+  check("a Codex rollout is recognised by its session_meta row", W.isCodexRollout(rollout) && !W.isCodexRollout(TRANSCRIPT));
+  const m = W.measureTranscript(rollout, W.codexContextTokens);
+  check("Codex context = the last non-empty token_count", m.tokens === 100500 && m.model === "gpt-6-astra" && m.window === 828400, JSON.stringify(m));
+
+  fs.writeFileSync(path.join(CHOME, "config.toml"), 'model = "x"\nmodel_auto_compact_token_limit = 479600\n[profiles.big]\nmodel_auto_compact_token_limit = 9\n');
+  check("the threshold is the top-level model_auto_compact_token_limit", W.codexThreshold({ CODEX_HOME: CHOME }, HOME, 828400).threshold === 479600);
+  fs.writeFileSync(path.join(CHOME, "config.toml"), 'model = "x"\n');
+  check("without it, 90% of the model window", W.codexThreshold({ CODEX_HOME: CHOME }, HOME, 828400).threshold === 745560);
+
+  fs.writeFileSync(path.join(CHOME, "config.toml"), "model_auto_compact_token_limit = 479600\n");
+  const codexMarker = W.markerPath(HOME, sid);
+  fs.rmSync(codexMarker, { force: true });
+  const hosts = [];
+  const run = () => W.decide({ input: { hook_event_name: "PostToolUse", session_id: sid, transcript_path: rollout, cwd: CWD }, env: { CODEX_HOME: CHOME }, home: HOME, now: Date.now(), launch: (a) => hosts.push(a.host) });
+  writeRollout(Math.floor(0.95 * 479600) - 600);
+  check("a Codex session under 95% stays below", run() === "below");
+  writeRollout(Math.ceil(0.95 * 479600));
+  check("a Codex session at 95% arms a codex preparation", run() === "armed" && hosts[0] === "codex", JSON.stringify(hosts));
+
+  const argsLog = path.join(ROOT, "codex-args.json");
+  const fake = path.join(ROOT, "fake-codex.js");
+  fs.writeFileSync(fake, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+require("fs").writeFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args));
+if (process.env.FAKE_FAIL === "1") { process.stderr.write("boom"); process.exit(1); }
+require("fs").writeFileSync(args[args.indexOf("-o") + 1], "## A\\nold\\n## B\\nnew\\nLAST SEEN: the last line\\n");
+process.stdout.write(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 61820, cached_input_tokens: 60000 } }) + "\\n");`);
+  fs.chmodSync(fake, 0o755);
+  fs.writeFileSync(codexMarker, JSON.stringify({ status: "running", attempts: 1, armedAt: 1 }));
+  spawnSync(process.execPath, [PREPARE, sid, rollout, CWD, codexMarker, "codex"], { env: { ...process.env, SUPER_COMPACT_CODEX: fake } });
+  const ready = JSON.parse(fs.readFileSync(codexMarker, "utf8"));
+  const args = JSON.parse(fs.readFileSync(argsLog, "utf8"));
+  const forkAt = args.indexOf("fork");
+  check("codex fork args: exec options before fork, read-only, ephemeral, -o",
+    args[0] === "exec" && forkAt > args.indexOf("-o") && args[forkAt + 1] === sid && args.includes("--ephemeral") && args[args.indexOf("-s") + 1] === "read-only",
+    JSON.stringify(args.slice(0, -1)));
+  check("a codex preparation writes ready with the summary and its usage",
+    ready.status === "ready" && ready.summary === "## A\nold\n## B\nnew" && ready.host === "codex" && ready.cacheReadTokens === 60000 && Number.isInteger(ready.pid),
+    JSON.stringify(ready));
+  check("the reply file is removed", !fs.readdirSync(path.dirname(codexMarker)).some((f) => f.includes("codex-reply")));
+  spawnSync(process.execPath, [PREPARE, sid, rollout, CWD, codexMarker, "codex"], { env: { ...process.env, SUPER_COMPACT_CODEX: fake, FAKE_FAIL: "1" } });
+  const failed = JSON.parse(fs.readFileSync(codexMarker, "utf8"));
+  check("a failed codex fork writes failed with its reason", failed.status === "failed" && failed.reason === "boom", JSON.stringify(failed));
+}
+
+// ── wait: a running marker whose process is gone ends the wait at once ──
+{
+  const WAIT = path.join(__dirname, "precompact-wait.js");
+  const Wt = require("./precompact-wait.js");
+  const waitMarker = path.join(ROOT, "wait.prepared.json");
+  const gone = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" });
+  const deadPid = Number(gone.stdout);
+  fs.writeFileSync(waitMarker, JSON.stringify({ status: "running", pid: process.pid }));
+  check("a running marker whose process is alive is still running", Wt.state(waitMarker) === "running");
+  fs.writeFileSync(waitMarker, JSON.stringify({ status: "running", pid: deadPid }));
+  check("a running marker whose process is gone is dead", Wt.state(waitMarker) === "dead");
+  const t0 = Date.now();
+  const out = spawnSync(process.execPath, [WAIT, waitMarker], { encoding: "utf8" }).stdout.trim();
+  check("the wait ends at once on a dead preparation", out === "dead" && Date.now() - t0 < 5_000, `${out} after ${Date.now() - t0} ms`);
+  const now = 1_000_000_000;
+  check("a running preparation is waited for up to 5 minutes", Wt.waitBudgetMs(now - 60_000, now) === 5 * 60_000 && Wt.waitBudgetMs(undefined, now) === 5 * 60_000);
+  check("never past its fork's own timeout since arming", Wt.waitBudgetMs(now - 9 * 60_000, now) === 75_000 && Wt.waitBudgetMs(now - 20 * 60_000, now) === 0);
+  const hookOut = spawnSync(process.execPath, [WAIT, "--hook"], { input: JSON.stringify({ session_id: "no-such-session" }), encoding: "utf8" });
+  check("the PreCompact hook prints nothing and exits 0 with no marker", hookOut.status === 0 && hookOut.stdout === "");
 }
 
 concurrent().then(() => {
