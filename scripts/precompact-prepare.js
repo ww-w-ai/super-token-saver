@@ -73,7 +73,7 @@ function main() {
   const reply = fork.text !== undefined ? splitReply(fork.text) : undefined;
   if (!reply) {
     const reason = fork.reason || (fork.text !== undefined ? `no ${LAST_SEEN} line in the reply` : "no reply");
-    writeMarker(marker, { ...base, status: "failed", reason: String(reason).slice(0, 500) });
+    writeMarker(marker, { ...base, status: "failed", reason: String(reason).slice(0, 500), ...(fork.retry === false && { retry: false }) });
     return;
   }
   writeMarker(marker, { ...base, status: "ready", summary: reply.summary, lastSeen: reply.lastSeen, ...fork.extra });
@@ -81,15 +81,32 @@ function main() {
 
 const spawnOptions = (cwd) => ({ cwd, env: process.env, encoding: "utf8", timeout: FORK_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
 
+/**
+ * The fork's own settings. verbose turns `--output-format json` into an array of events. Hooks
+ * fire in the fork as in the session; measured, a SessionStart injection there cut the cache read
+ * from 92K to 40.8K tokens.
+ */
+const FORK_SETTINGS = JSON.stringify({ verbose: false, disableAllHooks: true });
+
+/** The result event of `claude -p --output-format json`: one object, or the last "result" of a verbose array. */
+function resultEvent(out) {
+  if (!Array.isArray(out)) return out;
+  return out.filter((e) => e && e.type === "result").pop();
+}
+
 /** Claude Code: one tool-less turn on a fork of the session, which reuses its prompt cache. */
 function forkClaude(sid, cwd) {
   const run = spawnSync(
     process.env.SUPER_COMPACT_CLAUDE || "claude",
-    ["-p", SUMMARY_PROMPT, "--resume", sid, "--fork-session", "--output-format", "json", "--max-turns", "1"],
+    ["-p", SUMMARY_PROMPT, "--resume", sid, "--fork-session", "--output-format", "json", "--max-turns", "1", "--settings", FORK_SETTINGS],
     spawnOptions(cwd),
   );
-  let out;
-  try { out = JSON.parse(run.stdout); } catch { /* reported below */ }
+  let parsed;
+  try { parsed = JSON.parse(run.stdout); } catch { /* reported below */ }
+  const out = resultEvent(parsed);
+  // A parsed reply with no result object fails the same way on every retry, and each retry is a
+  // full-context fork.
+  if (parsed && (!out || typeof out !== "object")) return { reason: `exit ${run.status}: unexpected output shape`, retry: false };
   if (!out || out.is_error) {
     // Measured: a fork that exited 1 left stderr empty, so the reason said only "exit 1". stdout is
     // where `claude -p` puts its own error text, so its tail goes in too.

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.2] - 2026-10-31
+
+### Fixed: super-compact preparation works with Claude Code verbose mode on
+
+- With `"verbose": true` (or `--verbose`), `claude -p --output-format json` prints an array of
+  events instead of one result object, so every preparation was recorded as failed and the
+  prepared summary was never used. The fork now runs with `--settings
+  '{"verbose":false,"disableAllHooks":true}'`, and an array reply is read from its `result` event.
+  Reported in #11 by @SamStull9007.
+- The fork no longer runs the user's hooks. Hook output injected into the fork changed the prompt
+  it resumed, and the fork read 40.8K cached tokens of a 92K-token session instead of all of it
+  (#11, one measurement).
+- A reply with no result object is recorded as `unexpected output shape` and is not retried: it
+  fails the same way every time, and each retry is a full-context fork.
+
 ## [3.9.1] - 2026-10-30
 
 ### Fixed: idle compaction is summarized by super-compact on every surface
