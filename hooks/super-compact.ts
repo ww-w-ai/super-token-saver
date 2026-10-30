@@ -24,6 +24,11 @@ import type {
  * (PROMPT_FILE); a request refused as too long is split in two. When that fails too, core's
  * compaction stands untouched and no handled marker is written, so the shell restore runs.
  *
+ * Idle compaction reaches this module too. In the terminal it arrives as `auto` and takes the path
+ * above. In VS Code and the desktop app it arrives as `precompute`: the engine keeps the result for
+ * the compaction it installs later, so the module hands up its own conversation the same way but
+ * consumes nothing and writes no marker; with no summary it skips, so core never writes one.
+ *
  * When compaction runs, the conversation becomes, oldest first:
  *   1. one user message in the shape core's own summary takes: everything before the last
  *      compaction (section A of the prepared summary), plus what the abbreviated dialogue below
@@ -635,7 +640,10 @@ async function writeReport($: EngineInterface, report: Report): Promise<string |
 async function compact($: EngineInterface, e: SessionCompactInput, next: Next<'session.compact'>): Promise<SessionCompactResult> {
   const threshold = (await readThreshold($)) ?? 0
   const report: Report = { trigger: e.trigger, threshold }
-  const prep = await awaitPrepared($, await readPrepared($), report)
+  // `precompute` installs nothing: the engine keeps the result for a later compaction. A prepared
+  // summary is used when ready but neither waited for nor consumed, and no marker or file is written.
+  const installs = e.trigger !== 'precompute'
+  const prep = installs ? await awaitPrepared($, await readPrepared($), report) : await readPrepared($)
   const transcript = await readTranscript($, e.messages)
   const pointer = typeof transcript === 'string' ? undefined : transcript
   const ready = prep?.status === 'ready' && !!prep.summary && typeof prep.coveredLine === 'number'
@@ -654,6 +662,9 @@ async function compact($: EngineInterface, e: SessionCompactInput, next: Next<'s
     // Core's compaction stands untouched and no handled marker is written, so the after-compact
     // shell hook runs its full restore: nothing is put back twice.
     if (!text) {
+      // A precompute is skipped rather than handed to core: nothing is kept, and the compaction
+      // that comes later runs through this module again.
+      if (!installs) return { skip: `super-compact: no summary (${report.immediateFailure ?? 'unknown'})` }
       await clearPrepared($)
       $.ui.log(`super-compact: no summary (${report.immediateFailure ?? 'unknown'}); core compaction stands`)
       return next(e)
@@ -664,6 +675,7 @@ async function compact($: EngineInterface, e: SessionCompactInput, next: Next<'s
   report.source = summary.source
   if (typeof transcript === 'string') report.linePointersUnavailable = transcript
   const messages = assemble(e.messages, summary, threshold, report, pointer)
+  if (!installs) return { messages, tokensBefore: sumTokens(e.messages) }
   await persistSummary($, e.messages, summary.text, pointer, report)
   await clearPrepared($)
   await writeReport($, report)
@@ -674,7 +686,7 @@ async function compact($: EngineInterface, e: SessionCompactInput, next: Next<'s
 
 export const register: Register = on => {
   on('session.compact', async ($, e, next) => {
-    if (e.agentId !== undefined || e.trigger === 'precompute') return next(e)
+    if (e.agentId !== undefined) return next(e)
     let coreRan = false
     const core: Next<'session.compact'> = Object.assign((x: SessionCompactInput) => {
       coreRan = true
@@ -683,8 +695,10 @@ export const register: Register = on => {
     try {
       return await compact($, e, core)
     } catch (err) {
+      if (e.trigger === 'precompute') return { skip: `super-compact failed: ${err}` }
       $.ui.log(`super-compact: fell back to core compaction: ${err}`)
       return coreRan ? { skip: `super-compact failed after core ran: ${err}` } : next(e)
     }
-  }).catch(($, e, next) => (next.called ? { skip: 'super-compact: its hook failed after core ran' } : next(e)))
+  }).catch(($, e, next) =>
+    next.called || e.trigger === 'precompute' ? { skip: 'super-compact: its hook failed' } : next(e))
 }

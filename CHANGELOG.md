@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.1] - 2026-10-30
+
+### Fixed: idle compaction is summarized by super-compact on every surface
+
+- Claude Code's idle compaction (2.1.299+) compacts a conversation over 200K tokens left quiet for
+  about 54 minutes. In VS Code and the desktop app it computes the summary ahead of time
+  (`precompute`), which the module handed to the engine's own summarizer. The module now writes that
+  summary itself, without consuming the prepared summary or writing a handled marker; if it cannot,
+  it skips, so the engine never writes one. In the terminal idle compaction already took the
+  module's path.
+
+### Fixed: idle compactions are no longer learned as a model's threshold
+
+- Idle compaction records the same `auto` trigger as a threshold compaction, so the watcher took it
+  for an early auto-compact limit and started preparing summaries too early (both cases measured so
+  far were idle compactions about 53 minutes after the last request). A compaction that started
+  45+ minutes after the last request is no longer learned.
+
 ## [3.9.0] - 2026-10-30
 
 ### Fixed: super-compact no longer compacts to an empty summary

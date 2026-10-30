@@ -46,6 +46,12 @@ const IMAGE_TOKENS = 2_000;
 
 const BOUNDARY_START_BYTES = 256 * 1024;
 const BOUNDARY_MAX_BYTES = 64 * 1024 * 1024;
+/**
+ * Claude Code's idle compaction (2.1.299+) also records trigger "auto", about 54 minutes after the
+ * last request and at any size over its 200K minimum. A compaction that started after this much
+ * quiet says nothing about the threshold, so it is not learned.
+ */
+const IDLE_QUIET_MS = 45 * 60_000;
 
 const dataDir = (home) => path.join(home, ".claude", "super-token-saver-data", ".super-compact");
 const markerPath = (home, sid) => path.join(dataDir(home), `${sid}.prepared.json`);
@@ -282,12 +288,30 @@ function autoCompactThreshold({ env, settings, model }) {
 
 // ───────────────────────── observed thresholds ─────────────────────────
 //
-// The engine can auto-compact well under the threshold it computes and reports: measured, a
-// claude-opus-4-8 session compacted at 242,405 tokens while both this script and the engine's own
-// usage breakdown put the threshold at 517,000, so the 95% crossing never came. The point a
-// compaction really ran at is recorded per model and caps the computed threshold from then on.
+// The engine's `auto` covers a prompt refused as too long as well as the threshold, so a model can
+// compact under the threshold this script computes. The point such a compaction ran at is recorded
+// per model and caps the computed threshold from then on. Idle compaction records `auto` too and is
+// left out by its quiet time: the two compactions first taken for an early limit (claude-opus-4-8 at
+// 242,405 and 434,694 against 517,000) both started about 53 minutes after the last request.
 
-/** The newest compact_boundary row's compactMetadata, read from the transcript's end. */
+/**
+ * How long the conversation had been quiet when the boundary's compaction started: from the last
+ * user or assistant row before it to the boundary's timestamp minus its duration. Undefined when a
+ * timestamp is missing.
+ */
+function quietBefore(rows, i) {
+  const at = Date.parse(rows[i].timestamp ?? "");
+  if (!Number.isFinite(at)) return undefined;
+  const started = at - (positiveInt(rows[i].compactMetadata?.durationMs) ?? 0);
+  for (let j = i - 1; j >= 0; j--) {
+    if (rows[j].type !== "user" && rows[j].type !== "assistant") continue;
+    const last = Date.parse(rows[j].timestamp ?? "");
+    return Number.isFinite(last) ? started - last : undefined;
+  }
+  return undefined;
+}
+
+/** The newest compact_boundary row's compactMetadata and quiet time, read from the transcript's end. */
 function lastBoundary(transcript) {
   const fd = fs.openSync(transcript, "r");
   try {
@@ -295,7 +319,9 @@ function lastBoundary(transcript) {
     for (let bytes = BOUNDARY_START_BYTES; ; bytes *= 2) {
       const { rows, complete } = tailRows(fd, size, Math.min(bytes, BOUNDARY_MAX_BYTES));
       for (let i = rows.length - 1; i >= 0; i--) {
-        if (rows[i].type === "system" && rows[i].subtype === "compact_boundary") return rows[i].compactMetadata ?? {};
+        if (rows[i].type === "system" && rows[i].subtype === "compact_boundary") {
+          return { meta: rows[i].compactMetadata ?? {}, quietMs: quietBefore(rows, i) };
+        }
       }
       if (complete || bytes >= BOUNDARY_MAX_BYTES) return undefined;
     }
@@ -321,9 +347,11 @@ function learnFromCompaction({ home, sid, transcript, tokens, model, computed, n
   const prev = readJson(seenPath(home, sid));
   writeJson(seenPath(home, sid), { tokens, model: model ?? prev?.model ?? null, at: now });
   if (!prev || !(tokens < REARM_FRACTION * prev.tokens)) return;
-  const meta = lastBoundary(transcript);
+  const boundary = lastBoundary(transcript);
+  const meta = boundary?.meta;
   const key = prev.model ?? model;
   if (!meta || meta.trigger !== "auto" || !positiveInt(meta.preTokens) || !key) return;
+  if (boundary.quietMs >= IDLE_QUIET_MS) return;
   const observed = readJson(observedPath(home)) ?? {};
   if (meta.preTokens < ARM_FRACTION * computed) observed[key] = { preTokens: meta.preTokens, at: now, sessionId: sid };
   else delete observed[key];

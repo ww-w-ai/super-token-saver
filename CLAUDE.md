@@ -108,11 +108,20 @@ exec options BEFORE `fork` or they are refused) and writes
 the fork began — every later line is newer than the summary. **The summary instruction lives ONLY in
 `scripts/super-compact-prompt.txt`**, read by prepare and by the mod.
 
-- **The engine can compact far under the threshold it reports** (auto covers "prompt too long"):
-  measured, a claude-opus-4-8 session compacted at 242,405 tokens while the engine and the script
-  both said 517,000, so 95% never came. The watcher records where an auto-compaction really ran, per
-  model, in `.super-compact/observed-thresholds.json` and caps the threshold with it (Claude Code
-  only; a Codex `compacted` row carries no pre-compaction size).
+- **The engine can compact under the threshold it reports** (auto covers "prompt too long"). The
+  watcher records where such an auto-compaction ran, per model, in
+  `.super-compact/observed-thresholds.json` and caps the threshold with it (Claude Code only; a Codex
+  `compacted` row carries no pre-compaction size).
+- **Idle compaction (Claude Code 2.1.299+) also arrives as `auto` and must not be learned.** A
+  conversation over 200K tokens (`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`) quiet for about 54 minutes is
+  compacted before its one-hour cache expires; `"idleCompaction": false` turns it off. Every early
+  compaction measured so far was this (242,405 and 434,694 against 517,000, both ~53 min after the last
+  request), so the watcher skips a boundary that started 45+ minutes after the last user/assistant
+  row. The mod handles it like any other compaction: in the terminal it is `auto` (immediate summary
+  when nothing is prepared); in VS Code and the desktop app it is `precompute`, which installs nothing,
+  so the mod hands up its own conversation without consuming the prepared file or writing a marker,
+  and skips rather than letting core summarize. No test can raise `precompute`; it is checked by type
+  and review only.
 - **Compaction waits for a running preparation.** `scripts/precompact-wait.js` owns when to give up:
   the marker stops running, its pid is gone, 5 minutes, or the fork's 10-minute timeout since arming.
   The mod runs it through `$.process.run` (a `$.clock` wait spends the hook's 10 s budget). Without
