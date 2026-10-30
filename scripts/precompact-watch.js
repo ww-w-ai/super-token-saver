@@ -391,7 +391,7 @@ function claimRetry(file) {
 
 const isRetryable = (m, now) =>
   m && (m.status === "failed" || (m.status === "running" && now - (m.armedAt ?? 0) > RUNNING_STALE_MS)) &&
-  (m.attempts ?? 1) < MAX_ATTEMPTS;
+  m.retry !== false && (m.attempts ?? 1) < MAX_ATTEMPTS;
 
 /** Claude Code: tokenCountWithEstimation against the engine threshold, capped by the observed one. */
 function measureClaude({ input, transcript, env, home, sid, now }) {

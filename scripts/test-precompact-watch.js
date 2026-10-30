@@ -138,6 +138,8 @@ fs.writeFileSync(marker, JSON.stringify({ status: "failed", attempts: 1, armedAt
 check("a failed preparation is retried", decide() === "retried" && launches === 3 && JSON.parse(fs.readFileSync(marker, "utf8")).attempts === 2);
 fs.writeFileSync(marker, JSON.stringify({ status: "failed", attempts: 3, armedAt: Date.now() }));
 check("no retry after 3 attempts", decide() === "held" && launches === 3);
+fs.writeFileSync(marker, JSON.stringify({ status: "failed", attempts: 1, armedAt: Date.now(), retry: false }));
+check("a failure marked retry:false is not retried", decide() === "held" && launches === 3);
 fs.writeFileSync(marker, JSON.stringify({ status: "running", attempts: 1, armedAt: Date.now() - 16 * 60_000 }));
 check("a running marker older than 15 minutes is retried", decide() === "retried" && launches === 4);
 fs.writeFileSync(marker, JSON.stringify({ status: "running", attempts: 1, armedAt: Date.now() }));
@@ -229,7 +231,10 @@ function preparer() {
   fs.writeFileSync(fake, `#!/usr/bin/env node
 require("fs").writeFileSync(${JSON.stringify(argsLog)}, JSON.stringify(process.argv.slice(2)));
 const fail = process.env.FAKE_FAIL === "1";
-process.stdout.write(JSON.stringify(fail ? { is_error: true, result: "boom" } : { is_error: false, result: "## A\\nold\\n## B\\nnew\\nLAST SEEN: the last line", session_id: "fork-1", total_cost_usd: 0.1, usage: { cache_read_input_tokens: 360000, cache_creation_input_tokens: 3600 } }));`);
+const result = fail ? { is_error: true, result: "boom" } : { type: "result", is_error: false, result: "## A\\nold\\n## B\\nnew\\nLAST SEEN: the last line", session_id: "fork-1", total_cost_usd: 0.1, usage: { cache_read_input_tokens: 360000, cache_creation_input_tokens: 3600 } };
+const verbose = [{ type: "system" }, { type: "assistant" }, { type: "rate_limit_event" }];
+const out = { verbose: [...verbose, result], noresult: verbose }[process.env.FAKE_SHAPE] ?? result;
+process.stdout.write(JSON.stringify(out));`);
   fs.chmodSync(fake, 0o755);
   writeTranscript(500000);
   fs.writeFileSync(marker, JSON.stringify({ status: "running", attempts: 1, armedAt: 1 }));
@@ -243,7 +248,18 @@ process.stdout.write(JSON.stringify(fail ? { is_error: true, result: "boom" } : 
     JSON.stringify(ready));
   spawnSync(process.execPath, [PREPARE, SID, TRANSCRIPT, CWD, marker], { env: { ...process.env, SUPER_COMPACT_CLAUDE: fake, FAKE_FAIL: "1" } });
   const failed = JSON.parse(fs.readFileSync(marker, "utf8"));
-  check("a failed fork writes failed with its reason", failed.status === "failed" && failed.reason === "exit 0: boom", JSON.stringify(failed));
+  check("a failed fork writes failed with its reason", failed.status === "failed" && failed.reason === "exit 0: boom" && failed.retry === undefined, JSON.stringify(failed));
+  check("fork settings turn verbose and hooks off",
+    JSON.stringify(JSON.parse(args[args.indexOf("--settings") + 1])) === JSON.stringify({ verbose: false, disableAllHooks: true }));
+
+  spawnSync(process.execPath, [PREPARE, SID, TRANSCRIPT, CWD, marker], { env: { ...process.env, SUPER_COMPACT_CLAUDE: fake, FAKE_SHAPE: "verbose" } });
+  const verbose = JSON.parse(fs.readFileSync(marker, "utf8"));
+  check("a verbose array reply is read from its result event",
+    verbose.status === "ready" && verbose.lastSeen === "the last line" && verbose.forkSessionId === "fork-1", JSON.stringify(verbose));
+  spawnSync(process.execPath, [PREPARE, SID, TRANSCRIPT, CWD, marker], { env: { ...process.env, SUPER_COMPACT_CLAUDE: fake, FAKE_SHAPE: "noresult" } });
+  const shape = JSON.parse(fs.readFileSync(marker, "utf8"));
+  check("an array with no result event fails without retry",
+    shape.status === "failed" && shape.reason === "exit 0: unexpected output shape" && shape.retry === false, JSON.stringify(shape));
   check("the preparer records its own pid", Number.isInteger(ready.pid) && ready.pid > 0, JSON.stringify(ready));
 }
 
