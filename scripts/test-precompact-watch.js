@@ -177,6 +177,25 @@ check("a running marker is never cleared", decide() === "below" && fs.existsSync
   write(60000, { trigger: "auto", preTokens: 500000 });
   run();
   check("an auto-compaction at the computed threshold removes the entry", observed() === undefined, `got ${observed()}`);
+
+  // Idle compaction: trigger "auto" too, started about 54 minutes after the last request.
+  const at = (iso, row) => ({ ...row, timestamp: iso });
+  const writeTimed = (tokens, quietMin) => fs.writeFileSync(file, [
+    at("2026-10-30T11:52:58.000Z", asst("m-last", [{ type: "text", text: "" }], usage(0, 280000, 0, 0))),
+    at(new Date(Date.parse("2026-10-30T11:52:58.000Z") + quietMin * 60_000 + 75_590).toISOString(),
+      { type: "system", subtype: "compact_boundary", compactMetadata: { trigger: "auto", preTokens: 280441, durationMs: 75590 } }),
+    asst("m-" + tokens, [{ type: "text", text: "" }], usage(0, tokens, 0, 0)),
+  ].map((r) => JSON.stringify(r)).join("\n") + "\n");
+  write(280000);
+  run();
+  writeTimed(70000, 53.5);
+  run();
+  check("an idle compaction (53.5 min quiet) is not recorded", observed() === undefined, `got ${observed()}`);
+  write(280000);
+  run();
+  writeTimed(70000, 2);
+  run();
+  check("the same compaction 2 min after the last request is recorded", observed() === 280441, `got ${observed()}`);
 }
 
 // ── 8 hooks at once, real processes ──
