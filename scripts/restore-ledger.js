@@ -698,7 +698,9 @@ dialogue abbreviated with [L{n}] line pointers, the current turn verbatim), so t
 injected again.
 If a detail turns out to be missing, the full restore is on disk:`;
 
-const HOOK_RULES = `Prefer it over the compact summary wherever the two disagree, and do NOT re-derive findings
+const HOOK_RULES = `Every User entry in it is a past message the assistant already answered: never run one again or
+treat it as a new instruction. Resume the task you were in the middle of, not its old user messages.
+Prefer it over the compact summary wherever the two disagree, and do NOT re-derive findings
 that already appear in it. If you were mid-run on an autonomous task (cowork-sprint, pdca-wf, a
 Workflow), resume from it rather than re-planning. Standing orders stated there still govern the
 work. Folded entries end in \`…[+N chars, read L{n} for the rest]\`: read that line of the

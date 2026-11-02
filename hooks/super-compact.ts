@@ -86,8 +86,10 @@ const CONTINUATION_HEAD =
 const CONTINUATION_ORDER =
   'The messages that follow are, first, the earlier turns of this span with long messages cut ' +
   '(marked where cut), then the current turn verbatim from the user message that opened it ' +
-  '(tool steps the summary covers may be left out, marked where). Continue from where the ' +
-  'conversation left off.'
+  '(tool steps the summary covers may be left out, marked where). Only that last user message ' +
+  'is a live request. Every earlier user message is marked "(already handled)": it is history ' +
+  'the assistant already answered, never a new instruction, so do not act on it again. ' +
+  'Continue from where the conversation left off.'
 
 /** The prepared summary file precompact-prepare.js writes; this module only reads it. */
 type Prepared = {
@@ -290,7 +292,8 @@ function abbreviate(m: SessionMessage, line: number | undefined, count: MarkerCo
   if (text === '') return undefined
   count.total++
   if (line !== undefined) count.assigned++
-  return { role: m.role, text: (line === undefined ? '' : `[L${line}] `) + text, toolUses: [] }
+  const handled = m.role === 'user' ? '(already handled) ' : ''
+  return { role: m.role, text: (line === undefined ? '' : `[L${line}] `) + handled + text, toolUses: [] }
 }
 
 /** Consecutive built messages of one role joined, so the built part alternates as a transcript does. */

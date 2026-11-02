@@ -149,6 +149,10 @@ rest itself (`$.model.complete` on the session's model; a 400/413 refusal splits
 the older half carried as a continuation summary). When that fails too it returns `next(e)`
 untouched and writes no handled marker.
 
+- **A restored past user message must never read as a new request.** The mod's abbreviated dialogue
+  is real `user` messages, so each carries `(already handled)` and the summary names the last user
+  message as the only live one; the hook restore and `restore.js` open with the same statement. A
+  restore path without it made the model re-run old user turns after an auto-compact.
 - **Never rebuild around core's result.** Core's summary is an engine message with a `handle`, so a
   `!m.handle` filter drops it and the summary comes out empty (measured, three compactions in one
   night). And core run inside the mod fires the after-compact hook before the mod has written the

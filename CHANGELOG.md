@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.3] - 2026-11-03
+
+### Fixed: restored past user messages are no longer read as new instructions
+
+- After a compaction, the earlier user turns that super-compact re-attached were plain `user`
+  messages, so the model could take one for a fresh request and run it again. Each is now marked
+  `(already handled)`, and the summary message says only the last user message is a live request.
+- The after-compact hook restore and the `/s-continue` restore (`restore.js`) now open by saying
+  every User entry is a past message already answered, never to be run again.
+
 ## [3.9.2] - 2026-10-31
 
 ### Fixed: super-compact preparation works with Claude Code verbose mode on

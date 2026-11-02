@@ -116,7 +116,9 @@ test('abbreviated messages carry [L{n}] and the summary names the transcript', a
   const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: 4 }, THRESHOLD, report, pointer(msgs))
 
   expect(report.tailStart).toBe(2)
-  expect(out[1]!.text).toBe('[L10] first question')
+  expect(out[1]!.text).toBe('[L10] (already handled) first question')
+  expect(out[0]!.text.includes('never a new instruction')).toBe(true)
+  expect(out[2]!.text.includes('already handled')).toBe(false)
   expect(out[2]!.text).toBe('[L12] first answer')
   expect(out[0]!.text.includes(`the transcript at ${PATH}`)).toBe(true)
   expect(out[0]!.text.includes('even when this summary is later restored into another session')).toBe(true)
@@ -228,7 +230,7 @@ test('the dialogue has no cap: every turn of the span comes back', async () => {
   // the last two exchanges are the verbatim tail (4 messages); the other 398 are abbreviated.
   expect(report.dialogueMessages).toBe(796)
   expect(report.dialogueHumanTurns).toBe(398)
-  expect(out.some(m => !m.handle && m.text.startsWith('question 0 '))).toBe(true)
+  expect(out.some(m => !m.handle && m.text.startsWith('(already handled) question 0 '))).toBe(true)
   expect(out.slice(-4).map(m => m.handle)).toEqual(['u398', 'a398', 'u399', 'a399'])
 })
 
@@ -251,7 +253,7 @@ test('the abbreviated dialogue widens back to at least MIN_TURNS human turns', a
   expect(report.dialogueStart).toBe(0)
   // the old boundary summary message is never folded into the dialogue.
   expect(out.some(m => !m.handle && m.text.includes('prior summary'))).toBe(false)
-  expect(out.some(m => !m.handle && m.text.startsWith('question 0 '))).toBe(true)
+  expect(out.some(m => !m.handle && m.text.startsWith('(already handled) question 0 '))).toBe(true)
   // 3 old exchanges are abbreviated; the last two ('new one' + 'new two') are the verbatim tail.
   expect(report.dialogueHumanTurns).toBe(3)
 })
