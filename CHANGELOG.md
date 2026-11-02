@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.4] - 2026-11-03
+
+### Fixed: "Running SessionStart hooks…" no longer lingers after a super-compact compaction
+
+- When a module replaces the summary, Claude Code 2.1.316 sends its compaction-end event before it
+  runs the SessionStart(compact) hooks and sends none afterwards. The spinner kept the text for the
+  rest of the turn while the model worked, and it read as a hung hook (the hooks had finished in
+  about 70 ms).
+- super-compact now hooks `ui.render` on the Spinner and draws it without that exact text, so the
+  engine shows its own word. Only the drawing changes; every other spinner text is left alone.
+- PreCompact hooks do not run when the module replaces the summary (the engine runs them inside its
+  own summary step). The module waits for the prepared summary itself, so nothing of ours is lost.
+
 ## [3.9.3] - 2026-11-03
 
 ### Fixed: restored past user messages are no longer read as new instructions

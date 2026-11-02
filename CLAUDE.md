@@ -158,6 +158,16 @@ untouched and writes no handled marker.
   night). And core run inside the mod fires the after-compact hook before the mod has written the
   handled marker (measured 46 ms earlier), so the restore was injected twice.
 
+- **The mod hides the client's stale "Running SessionStart hooks…" text.** With a replacing module the
+  client sends `compact_end` before the SessionStart(compact) hooks and none after, so the spinner
+  keeps that text until the turn ends. A `ui.render` hook on `Spinner` draws it as `message: null`
+  (`STALE_HOOKS_LABEL`); only the drawing changes. Do not "fix" it from a hook's registration or
+  output: the text is set before any hook is looked up. Drop the hook once the client sends
+  `compact_end` after those hooks.
+- **PreCompact hooks do not run when the mod replaces the summary** (the engine runs them inside its
+  own summary step). The mod waits for the prepared summary itself (`awaitPrepared` →
+  `precompact-wait.js`), so the `PreCompact` entry matters only without the mod.
+
 The mod writes the handled marker `~/.claude/super-token-saver-data/.super-compact/<sid>.json` (the
 after-compact hook consumes it if under 300 s old → pointer only) and persists each compaction's
 summary to `<session cache>/super-compact/<n>.md`, which the next session's `/s-continue` loads

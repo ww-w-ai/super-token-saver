@@ -685,9 +685,26 @@ async function compact($: EngineInterface, e: SessionCompactInput, next: Next<'s
   return { messages, tokensBefore: sumTokens(e.messages) }
 }
 
+// ───────────────────────────── spinner label ─────────────────────────────
+
+/**
+ * What the client's spinner says while SessionStart(compact) hooks run. After a compaction this
+ * module replaced, the client sends `compact_end` before it runs those hooks and never sends
+ * another, so the text outlives the hooks until the turn ends (Claude Code 2.1.316). The hooks are
+ * long finished by then, and the text reads as a hung hook.
+ */
+export const STALE_HOOKS_LABEL = 'Running SessionStart hooks…'
+
 // ───────────────────────────── wiring ─────────────────────────────
 
 export const register: Register = on => {
+  // Draws the spinner as if that text were not set: the engine falls back to its own word. Only the
+  // drawing changes — the client's stored state and the label's colour are not reachable from here.
+  on('ui.render', { component: 'Spinner' }, ($, e, next) => {
+    if (e.component !== 'Spinner' || e.props.message !== STALE_HOOKS_LABEL) return next(e)
+    return next({ ...e, props: { ...e.props, message: null } })
+  })
+
   on('session.compact', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     let coreRan = false
