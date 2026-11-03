@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.5] - 2026-11-03
+
+### Changed: the rebuilt conversation after a super-compact compaction is smaller
+
+- One real session came back from compaction at 391K tokens, 155K of it ours. Each compaction folded
+  the previous compaction's abbreviated dialogue again, so it carried through four compactions and
+  `[L]` pointer chains ran up to 26 deep. The dialogue now starts behind the previous rebuild's block
+  (the new summary covers it) and a message already abbreviated keeps one `[L{n}]`, the line of its
+  original. Simulated on that session's own transcript: 155K -> 36K tokens (dialogue 90K -> 6K, tail
+  61K -> 26K); this was not measured on a live compaction.
+- Abbreviation (the middle cut out with `...`, start and end kept) and summary (text the model writes)
+  are now separate: the dialogue is abbreviated, sections A and B are the summary.
+- The dialogue holds at least 5 human turns (was 10). With fewer in the span it reaches into earlier
+  spans, which keep only their start (user 200 characters, replies and teammate/subagent messages 100).
+- Teammate reports and subagent notices join the dialogue with their first 100 characters and an
+  `[L{n}]` pointer. Idle notifications stay out.
+- Length limits count English characters; Hangul, Han, Kana, Thai and the Indic scripts get 2/3 of them.
+- Token estimates follow a measured ratio (2.1 ASCII chars per token, 1.35 tokens per other char; the
+  old ratios counted half of the real size).
+- The summary instruction (section B) now asks for what the abbreviated dialogue cannot give: the tool
+  process, all communication with agents and delegated work, the cut parts of messages, and turns that
+  no longer come back.
+- How to read an original from its `[L{n}]` moved from the summary to the SessionStart(compact) hook,
+  which names the transcript path.
+
 ## [3.9.4] - 2026-11-03
 
 ### Fixed: "Running SessionStart hooks…" no longer lingers after a super-compact compaction

@@ -218,6 +218,7 @@ fs.mkdirSync(markerDir, { recursive: true });
 fs.writeFileSync(marker, "{}");
 hk = runHook(SID, transcript);
 check("handled marker: pointer only, no turns re-injected", hk.ctx.startsWith("# Compaction handled by super-compact") && hk.ctx.includes(restoreFile) && !hk.ctx.includes("picked up [Session:33333333"));
+check("handled marker: names the transcript and how to read an [L{n}] original", hk.ctx.includes(transcript) && hk.ctx.includes("[L{n}]") && hk.ctx.includes("message.content") && hk.ctx.includes("first 100 characters"));
 check("handled marker consumed", !fs.existsSync(marker));
 fs.writeFileSync(marker, "{}");
 const stale = Date.now() / 1000 - 3600;

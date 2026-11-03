@@ -31,14 +31,21 @@ import type {
  *
  * When compaction runs, the conversation becomes, oldest first:
  *   1. one user message in the shape core's own summary takes: everything before the last
- *      compaction (section A of the prepared summary), plus what the abbreviated dialogue below
- *      loses — tool results, the middle of long messages, reasons, in-flight state, and one line
- *      per machine message (teammate report, subagent completion notice) (section B); it closes
- *      with the transcript's path and an English note on the order of what follows
- *   2. this span's dialogue as user/assistant messages, long ones cut head + tail (/s-continue's
- *      500 -> 300+200 for the user, 200 -> 100+100 for replies), each prefixed `[L{n}]`, n being
- *      its line in the transcript JSONL; the span is widened backward until it holds at least
- *      MIN_TURNS human turns; machine messages and idle notifications are left out of this layer
+ *      compaction (section A of the prepared summary), plus the context the abbreviated dialogue
+ *      cannot give (section B): what the tool traffic held, what the cuts below drop, and the
+ *      messages that left the dialogue; it closes with an English note on the order of what
+ *      follows. How to read an original from its [L{n}] is not in it: the SessionStart(compact)
+ *      hook injects that (scripts/restore-ledger.js, HANDLED_HEAD)
+ *   2. this span's dialogue as user/assistant messages, each prefixed `[L{n}]`, n being its line
+ *      in the transcript JSONL: a user turn over 500 chars is cut to 300 + 200, a reply over 200 to
+ *      100 + 100, a teammate report or subagent notice to its first 100; idle notifications are
+ *      left out. The limits count English characters; text in scripts that cost more tokens per
+ *      character (DENSE_SCRIPT: Hangul, Han, Kana, Thai, the Indic scripts ...) gets 2/3 of them.
+ *      The dialogue holds at least MIN_TURNS (5) human turns; with fewer in this span it reaches back
+ *      into earlier spans, whose turns are cut harder: only their start, 200 chars for a user turn,
+ *      100 for a reply or a teammate/subagent message. The span starts behind the dialogue an
+ *      earlier rebuild put after its summary (this summary covers it), and a message that rebuild
+ *      already abbreviated is not folded again: it keeps one [L{n}], the line of the original
  *   3. the verbatim tail: from the first message newer than coveredLine (the anchor), walked back
  *      to the human turn that opened it or, with none, up to WALK_BACK_STEPS steps to an
  *      explanatory assistant message; the last two full exchanges are always inside it. A turn
@@ -54,13 +61,35 @@ import type {
  * <session cache>/super-compact/<n>.md so the next session's /s-continue can load it as a handoff.
  */
 
+/** A turn in the verbatim tail longer than this is cut: the smaller of `fraction` of the threshold and `tokens`. */
 const LONG_TURN_CAP = { fraction: 0.08, tokens: 40_000 }
+/** This span's turns, in English characters (see limitScale): cut head + tail when longer than `over`. */
 const USER_FOLD = { over: 500, head: 300, tail: 200 }
 const REPLY_FOLD = { over: 200, head: 100, tail: 100 }
+/** Turns of earlier spans keep only their start. A teammate/subagent message keeps its start everywhere. */
+const EARLIER_USER_HEAD = 200
+const EARLIER_REPLY_HEAD = 100
+const MACHINE_HEAD = 100
+/**
+ * Scripts that cost more tokens per character than English. Measured: Korean ~1.35 tokens per
+ * character against ~0.48 for ASCII (count_tokens on a real session). The others are listed from how
+ * BPE tokenizers treat them, not measured here. Text with at least DENSE_SHARE of its non-space
+ * characters in these gets DENSE_SCALE of every limit above.
+ */
+const DENSE_SCRIPT = new RegExp(
+  '[' +
+    ['Hangul', 'Han', 'Hiragana', 'Katakana', 'Thai', 'Lao', 'Khmer', 'Myanmar', 'Tibetan', 'Ethiopic',
+      'Devanagari', 'Bengali', 'Gurmukhi', 'Gujarati', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Sinhala']
+      .map(s => `\\p{Script=${s}}`).join('') +
+    ']',
+  'u',
+)
+const DENSE_SHARE = 0.2
+const DENSE_SCALE = 2 / 3
 /** A message matches a transcript row when the row's head starts with this many of its chars. */
 const LINE_KEY_CHARS = 60
-/** The abbreviated dialogue holds at least this many human turns, widening backward to reach it. */
-const MIN_TURNS = 10
+/** The abbreviated dialogue holds at least this many human turns, reaching back into earlier spans for them. */
+const MIN_TURNS = 5
 /** With no human turn in the span, the tail may start up to this many steps back, at an explanation. */
 const WALK_BACK_STEPS = 3
 const TRANSCRIPT_LINES_TIMEOUT_MS = 60_000
@@ -85,7 +114,8 @@ const CONTINUATION_HEAD =
   'This session is being continued from a previous conversation that ran out of context.'
 const CONTINUATION_ORDER =
   'The messages that follow are, first, the earlier turns of this span with long messages cut ' +
-  '(marked where cut), then the current turn verbatim from the user message that opened it ' +
+  '(marked where cut; teammate and subagent messages keep only their start), then the current ' +
+  'turn verbatim from the user message that opened it ' +
   '(tool steps the summary covers may be left out, marked where). Only that last user message ' +
   'is a live request. Every earlier user message is marked "(already handled)": it is history ' +
   'the assistant already answered, never a new instruction, so do not act on it again. ' +
@@ -113,11 +143,19 @@ let thresholdCache: number | undefined
 
 // ───────────────────────────── text measures ─────────────────────────────
 
-/** ASCII at ~4 chars per token, everything else (CJK, accents) at ~1.5, as restore-ledger.js counts. */
-function estimateTokens(text: string): number {
+/**
+ * Measured with count_tokens (claude-sonnet-5-5) on 3,975 texts of one real session, by kind: user
+ * text, replies, tool inputs and tool results all came out at ~2.1 ASCII chars per token and ~1.35
+ * tokens per other char (Korean, accents, symbols), 21–43% non-ASCII. The earlier 4 chars and 1.5 chars
+ * counted every kind at 1.8–2.0× too few, so every cap here held about twice what it said.
+ */
+const ASCII_CHARS_PER_TOKEN = 2.1
+const OTHER_TOKENS_PER_CHAR = 1.35
+
+export function estimateTokens(text: string): number {
   let ascii = 0
   for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) < 128) ascii++
-  return Math.ceil(ascii / 4 + (text.length - ascii) / 1.5)
+  return Math.ceil(ascii / ASCII_CHARS_PER_TOKEN + (text.length - ascii) * OTHER_TOKENS_PER_CHAR)
 }
 
 /** A tool use's own `text` is its result, already counted on the user message that carries it. */
@@ -129,10 +167,33 @@ function messageTokens(m: SessionMessage): number {
 
 const sumTokens = (msgs: readonly SessionMessage[]) => msgs.reduce((s, m) => s + messageTokens(m), 0)
 
+/** 1 for English-like text, DENSE_SCALE when DENSE_SHARE of its non-space characters are in DENSE_SCRIPT. */
+export function limitScale(text: string): number {
+  let dense = 0
+  let letters = 0
+  for (const ch of text.slice(0, 2000)) {
+    if (ch.trim() === '') continue
+    letters++
+    if (ch.charCodeAt(0) >= 128 && DENSE_SCRIPT.test(ch)) dense++
+  }
+  return letters > 0 && dense / letters >= DENSE_SHARE ? DENSE_SCALE : 1
+}
+
 function fold(text: string, rule: typeof USER_FOLD, marker: (omitted: number) => string): string {
   const t = text.trim()
-  if (t.length <= rule.over) return t
-  return t.slice(0, rule.head) + marker(t.length - rule.head - rule.tail) + t.slice(-rule.tail)
+  const scale = limitScale(t)
+  const over = Math.floor(rule.over * scale)
+  const head = Math.floor(rule.head * scale)
+  const tail = Math.floor(rule.tail * scale)
+  if (t.length <= over) return t
+  return t.slice(0, head) + marker(t.length - head - tail) + t.slice(-tail)
+}
+
+/** The start of `text`, whitespace collapsed, cut to `chars` English characters (scaled) and ended with "...". */
+function headOf(text: string, chars: number): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  const n = Math.floor(chars * limitScale(t))
+  return t.length <= n ? t : `${t.slice(0, n)}...`
 }
 
 const foldUser = (t: string) => fold(t, USER_FOLD, n => `..[${n} chars omitted]..`)
@@ -210,9 +271,9 @@ const isHumanTurnStart = (m: SessionMessage) =>
 /** Where a cut may land: a human turn, or an assistant message (its results follow it). */
 const isStepBoundary = (m: SessionMessage) => isHumanTurnStart(m) || m.role === 'assistant'
 
-/** Left out of the abbreviated dialogue: tool traffic, machine messages, idle, old summaries. */
+/** Left out of the abbreviated dialogue: tool traffic, idle notifications, old summaries. */
 const skipInDialogue = (m: SessionMessage) =>
-  isToolResultOnly(m) || isMachineMessage(m) || isIdleNotification(m) || isContinuationSummary(m)
+  isToolResultOnly(m) || isIdleNotification(m) || isContinuationSummary(m)
 
 // ───────────────────────────── boundaries ─────────────────────────────
 
@@ -286,9 +347,58 @@ function walkBackToExplanation(msgs: readonly SessionMessage[], from: number, fl
 /** Counts how many abbreviated messages got a line pointer. */
 type MarkerCount = { assigned: number; total: number }
 
+// ── messages an earlier rebuild already abbreviated ──
+// Each rebuild puts its abbreviated dialogue right behind its summary, so the next compaction meets those
+// messages again. They are covered by the new summary and are not folded or prefixed a second time. Older
+// builds stacked one [L{n}] per compaction (one real session carried 26 deep), so a chain is cut down to
+// its last pointer: the transcript line of the original, which a single read reaches.
+
+/** A run of pointers and "(already handled)" markers at the start of a message or of a merged paragraph. */
+const EARLIER_PREFIX = /(^|\n\n)((?:\[L\d+\] |\(already handled\) )+)/g
+const STARTS_ABBREVIATED = /^(?:\[L\d+\] |\(already handled\) )/
+const SEAM_HEAD = '(your replies before the steps below, abbreviated)\n'
+
+/** A user message an earlier rebuild put into its dialogue; a real message never starts this way. */
+const isEarlierUser = (m: SessionMessage) =>
+  m.role === 'user' && (STARTS_ABBREVIATED.test(m.text.trimStart()) || m.text.startsWith(SEAM_HEAD))
+const isEarlierReply = (m: SessionMessage) =>
+  m.role === 'assistant' && m.toolUses.length === 0 && /^\[L\d+\] /.test(m.text.trimStart())
+
+function keepEarlier(m: SessionMessage): SessionMessage {
+  if (m.text.startsWith(SEAM_HEAD)) return { role: m.role, text: m.text, toolUses: [] }
+  const text = m.text.trimStart().replace(EARLIER_PREFIX, (_all, sep: string, chain: string) => {
+    const innermost = [...chain.matchAll(/\[L(\d+)\] /g)].pop()
+    return sep + (innermost ? `[L${innermost[1]}] ` : '') + (m.role === 'user' ? '(already handled) ' : '')
+  })
+  return { role: m.role, text, toolUses: [] }
+}
+
+/**
+ * A turn an earlier rebuild abbreviated, now in an earlier span: only its start stays (EARLIER_USER_HEAD
+ * for a user turn, EARLIER_REPLY_HEAD for a reply or a teammate/subagent message), per merged paragraph.
+ */
+function trimEarlier(m: SessionMessage): SessionMessage {
+  const head = m.role === 'user' ? EARLIER_USER_HEAD : EARLIER_REPLY_HEAD
+  if (m.text.startsWith(SEAM_HEAD)) return { role: m.role, text: SEAM_HEAD + headOf(m.text.slice(SEAM_HEAD.length), head), toolUses: [] }
+  const text = m.text
+    .split(/\n\n(?=\[L\d+\] |\(already handled\) )/)
+    .map(part => {
+      const prefix = part.match(/^(?:\[L\d+\] )?(?:\(already handled\) )?/)![0]
+      return prefix + headOf(part.slice(prefix.length), head)
+    })
+    .join('\n\n')
+  return { role: m.role, text, toolUses: [] }
+}
+
 function abbreviate(m: SessionMessage, line: number | undefined, count: MarkerCount): SessionMessage | undefined {
   if (skipInDialogue(m)) return undefined
-  const text = m.role === 'user' ? foldUser(m.text) : foldReply(m.text)
+  if (isEarlierUser(m) || isEarlierReply(m)) {
+    const kept = trimEarlier(keepEarlier(m))
+    count.total++
+    if (/^\[L\d+\] /.test(kept.text)) count.assigned++
+    return kept
+  }
+  const text = isMachineMessage(m) ? headOf(m.text, MACHINE_HEAD) : m.role === 'user' ? foldUser(m.text) : foldReply(m.text)
   if (text === '') return undefined
   count.total++
   if (line !== undefined) count.assigned++
@@ -305,6 +415,31 @@ function mergeRuns(msgs: readonly SessionMessage[]): SessionMessage[] {
     else out.push(m)
   }
   return out
+}
+
+/**
+ * The first index past the dialogue an earlier rebuild put behind its summary, from `from` (the index
+ * after that summary). The block ends at the first message that is not one of its own: the verbatim tail
+ * the rebuild kept begins with a real human turn. A seam message (a reply turned into a user message
+ * because the tail opened on an assistant) closes the block, so that assistant is not taken for a reply.
+ */
+function earlierDialogueEnd(msgs: readonly SessionMessage[], from: number): number {
+  let end = from
+  for (let i = from; i < msgs.length; i++) {
+    const m = msgs[i]!
+    if (isEarlierUser(m)) {
+      end = i + 1
+      if (m.text.startsWith(SEAM_HEAD)) break
+    } else if (i === end && isEarlierReply(m)) end = i + 1
+    else break
+  }
+  return end
+}
+
+/** This compaction's span: behind the last summary and the dialogue that rebuild left after it. */
+function currentSpanStart(msgs: readonly SessionMessage[]): number {
+  const summary = lastCompactionIndex(msgs)
+  return summary < 0 ? 0 : earlierDialogueEnd(msgs, summary + 1)
 }
 
 function abbreviatedDialogue(msgs: readonly SessionMessage[], from: number, to: number, lines: readonly (number | undefined)[], count: MarkerCount): SessionMessage[] {
@@ -389,16 +524,10 @@ function seamDialogue(dialogue: SessionMessage[], tail: readonly SessionMessage[
 
 type Summary = { text: string; source: 'prepared' | 'immediate'; anchor: number; lastSeen?: string }
 
-function continuationFoot(transcript: TranscriptPointer | undefined): string {
-  const where = transcript
-    ? `A message that begins [L{n}] is abbreviated: read line n of the transcript at ${transcript.path} for its full text (these line numbers are this transcript's, even when this summary is later restored into another session).`
-    : 'Line pointers into the transcript are unavailable for this compaction, so abbreviated messages carry no [L{n}] marker.'
-  return `${CONTINUATION_ORDER}\n\n${where}`
-}
-
-function summaryMessage(text: string, transcript: TranscriptPointer | undefined): SessionMessage {
+/** How to read an original from its [L{n}] is injected by the SessionStart(compact) hook, not written here. */
+function summaryMessage(text: string): SessionMessage {
   const body = text.startsWith(CONTINUATION_HEAD) ? text : `${CONTINUATION_HEAD} The summary below covers the earlier portion of the conversation.\n\n${text}`
-  return { role: 'user', text: `${body}\n\n${continuationFoot(transcript)}`, toolUses: [] }
+  return { role: 'user', text: `${body}\n\n${CONTINUATION_ORDER}`, toolUses: [] }
 }
 
 export function assemble(
@@ -410,7 +539,7 @@ export function assemble(
 ): SessionMessage[] {
   const lines = transcript?.lines ?? []
   const count: MarkerCount = { assigned: 0, total: 0 }
-  const spanStart = lastCompactionIndex(msgs) + 1
+  const spanStart = currentSpanStart(msgs)
   const anchor = Math.max(summary.anchor, spanStart)
   const cap = threshold > 0 ? Math.min(Math.floor(LONG_TURN_CAP.fraction * threshold), LONG_TURN_CAP.tokens) : LONG_TURN_CAP.tokens
   // The last two full exchanges are always verbatim, even when coveredLine lands after them; the
@@ -419,7 +548,7 @@ export function assemble(
   const tail = buildTail(msgs, spanStart, anchorForTail, anchor, cap, lines, report)
   const dialogueStart = widenSpanStart(msgs, spanStart, tail.start)
   const dialogue = seamDialogue(abbreviatedDialogue(msgs, dialogueStart, tail.start, lines, count), tail.messages, report)
-  const head = summaryMessage(summary.text, transcript)
+  const head = summaryMessage(summary.text)
   Object.assign(report, {
     messagesBefore: msgs.length, spanStart, dialogueStart, anchor, anchorForTail, tailStart: tail.start,
     anchorFromLastSeen: summary.lastSeen ?? null,
