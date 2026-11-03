@@ -5,13 +5,12 @@ Output exactly two sections:
 ## A. Before the last compaction
 Everything before the most recent message that begins "This session is being continued from a previous conversation that ran out of context." (if any), together with that message itself: carry it forward compressed. Goals, decisions, standing user directives, finished and unfinished work.
 
-## B. Since the last compaction
-Your future self will ALSO receive every user message of this span (long ones cut to their first 300 and last 200 characters), every assistant reply (cut to first 100 and last 100 characters), and every message after the last one you can see, verbatim. The abbreviated dialogue leaves OUT teammate reports and subagent completion notices entirely — this section is the only place they survive. So do not restate ordinary dialogue; capture what that abbreviated dialogue loses:
-- Machine messages, one list item each: every teammate report (<teammate-message>) and every subagent completion notice (<task-notification>) in this span. For each, write who/what it came from, what it was asked to do, and its concrete result verbatim — numbers, file paths, verdict, and what it could not do. These are delegated-work results; do not compress them away. (Ignore idle/waiting notifications.)
-- details from the middle of long messages
-- important tool results: file paths, commands, numbers, measurements, errors, findings
-- the reasons behind user directives and corrections
-- what was tried and abandoned, and why
+## B. The context the shortened messages cannot give
+Two things differ here. Abbreviation is mechanical: the middle of a message is cut out with "..." and its start and end are kept verbatim. A summary is what you write now, in your own words. Your future self will ALSO receive this span's recent user turns, assistant replies and teammate/subagent messages abbreviated (a long user turn or reply keeps its start and end; a teammate report or subagent notice keeps only its first 100 characters), and every message after the last one you can see, verbatim. Turns from before the last compaction come back only as a short start, and only the last few of them. Tool results and the instruction texts given to agents do not come back at all. So do not restate ordinary dialogue; capture the context those messages lose, so that nothing needed later is missed:
+- the tool process, at summary level: what the tool calls did and what came of it — files read or changed, commands run, measurements, errors, findings that no message states. Keep key paths and numbers verbatim; do not list every call.
+- communication with agents and delegated work, one item each, at summary level: every subagent (foreground or background), teammate, headless `claude -p` or Codex run, and other external agent the assistant instructed or heard from, including messages sent to and received from them. Write who/what it was, what it was asked to do, what came back (verdict, key numbers, file paths), and what it could not do or left open. The details of each task need not be kept, but its gist must be. (Ignore idle/waiting notifications.)
+- the cut messages: the middle of long user turns and replies
+- the messages that no longer come back: anything from earlier turns that still matters — standing user directives and the reasons behind corrections, decisions, what was tried and abandoned and why
 - work in flight: the exact state, which step it reached and what the next step was (give the step numbers), and any pending decisions
 
 Write content in the language the user writes in. Keep identifiers, paths and numbers verbatim. Stay under 10000 tokens.

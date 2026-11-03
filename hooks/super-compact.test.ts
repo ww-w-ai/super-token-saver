@@ -4,7 +4,9 @@ import {
   alignLines,
   anchorFromCovered,
   assemble,
+  estimateTokens,
   immediateAnchor,
+  limitScale,
   summarizeMessages,
   summaryRequest,
   type Complete,
@@ -103,7 +105,7 @@ test('the anchor keeps the turns after it verbatim and folds the ones before', a
   expect(pairsWhole(out)).toBe(true)
 })
 
-test('abbreviated messages carry [L{n}] and the summary names the transcript', async () => {
+test('abbreviated messages carry [L{n}]; the summary leaves the lookup to the SessionStart hook', async () => {
   const msgs = [
     user('first question', 'h0'),
     reply('first answer', 'h1'),
@@ -120,14 +122,15 @@ test('abbreviated messages carry [L{n}] and the summary names the transcript', a
   expect(out[0]!.text.includes('never a new instruction')).toBe(true)
   expect(out[2]!.text.includes('already handled')).toBe(false)
   expect(out[2]!.text).toBe('[L12] first answer')
-  expect(out[0]!.text.includes(`the transcript at ${PATH}`)).toBe(true)
-  expect(out[0]!.text.includes('even when this summary is later restored into another session')).toBe(true)
+  // how to read line n is injected by the hook (scripts/restore-ledger.js), so it is not written into the summary.
+  expect(out[0]!.text.includes(PATH)).toBe(false)
+  expect(out[0]!.text.includes('read line n')).toBe(false)
   expect(out.filter(m => m.handle).every(m => !m.text.startsWith('[L'))).toBe(true)
   expect(report.lineMarkersAssigned).toBe(2)
   expect(report.lineMarkersTotal).toBe(2)
 })
 
-test('without line pointers no marker appears and the summary says so', async () => {
+test('without line pointers no marker appears', async () => {
   const msgs = [
     user('first question', 'h0'),
     reply('first answer', 'h1'),
@@ -139,7 +142,6 @@ test('without line pointers no marker appears and the summary says so', async ()
   const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: 4 }, THRESHOLD, {})
 
   expect(out.some(m => m.text.startsWith('[L'))).toBe(false)
-  expect(out[0]!.text.includes('Line pointers into the transcript are unavailable')).toBe(true)
 })
 
 test('alignLines takes the next unused row of the same role whose head starts with the text', async () => {
@@ -234,6 +236,154 @@ test('the dialogue has no cap: every turn of the span comes back', async () => {
   expect(out.slice(-4).map(m => m.handle)).toEqual(['u398', 'a398', 'u399', 'a399'])
 })
 
+/** What an earlier rebuild left behind its summary: its own abbreviated messages, which carry no engine handle. */
+const earlierUser = (text: string): SessionMessage => ({ role: 'user', text, toolUses: [] })
+const earlierReply = (text: string): SessionMessage => ({ role: 'assistant', text, toolUses: [] })
+
+test('a later compaction does not carry the previous dialogue forward: the new summary covers it', async () => {
+  const msgs = [
+    user(`${HEAD} previous summary`, 'hs'),
+    earlierUser('[L10] (already handled) EARLIER_Q'),
+    earlierReply('[L12] EARLIER_A'),
+    ...exchanges(12),
+  ]
+  const report: Record<string, unknown> = {}
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, report, pointer(msgs))
+
+  // the span starts behind the earlier dialogue; with 12 new turns nothing reaches back into it.
+  expect(report.spanStart).toBe(3)
+  expect(out.some(m => m.text.includes('EARLIER_Q') || m.text.includes('EARLIER_A'))).toBe(false)
+  expect(report.dialogueHumanTurns).toBe(10)
+})
+
+test('the verbatim tail the earlier rebuild kept is part of this span and is abbreviated now', async () => {
+  const msgs = [
+    user(`${HEAD} previous summary`, 'hs'),
+    earlierUser('[L10] (already handled) EARLIER_Q'),
+    earlierReply('[L12] EARLIER_A'),
+    user('KEPT_TAIL_Q ' + 'x'.repeat(800), 'k0'),
+    reply('KEPT_TAIL_A', 'k1'),
+    ...exchanges(12),
+  ]
+  const report: Record<string, unknown> = {}
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, report, pointer(msgs))
+
+  expect(report.spanStart).toBe(3)
+  const kept = out.find(m => !m.handle && m.text.includes('KEPT_TAIL_Q'))!
+  expect(kept.text.includes('..[')).toBe(true)
+  expect(out.some(m => m.text.includes('EARLIER_Q'))).toBe(false)
+})
+
+test('a past turn that was already abbreviated keeps its one pointer and is not folded again', async () => {
+  const msgs = [
+    user(`${HEAD} previous summary`, 'hs'),
+    earlierUser('[L10] (already handled) first question'),
+    earlierReply('[L12] first answer'),
+    user('new one', 'n0'),
+    reply('reply one', 'r0'),
+    user('new two', 'n1'),
+    reply('reply two', 'r1'),
+  ]
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, {}, pointer(msgs))
+
+  // fewer than MIN_TURNS turns in the span, so the dialogue reaches back to the earlier one, once, unchanged.
+  const hits = out.filter(m => m.text.includes('first question'))
+  expect(hits.length).toBe(1)
+  expect(hits[0]!.text.startsWith('[L10] (already handled) first question')).toBe(true)
+  expect(hits[0]!.text.includes('(already handled) [L')).toBe(false)
+})
+
+test('a chain of pointers from older builds is cut to the innermost one, the original line', async () => {
+  const chain = '[L66588] (already handled) [L64238] (already handled) [L59180] [L56930] [L14] '
+  const msgs = [
+    user(`${HEAD} previous summary`, 'hs'),
+    earlierUser(chain + '/s-continue read the handoff'),
+    earlierReply('[L70] ok'),
+    user('new one', 'n0'),
+    reply('reply one', 'r0'),
+    user('new two', 'n1'),
+    reply('reply two', 'r1'),
+  ]
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, {}, pointer(msgs))
+
+  const hit = out.find(m => m.text.includes('/s-continue'))!
+  expect(hit.text).toBe('[L14] (already handled) /s-continue read the handoff')
+})
+
+test('pointers inside a merged run are cut paragraph by paragraph', async () => {
+  const msgs = [
+    user(`${HEAD} previous summary`, 'hs'),
+    earlierUser('[L20] [L8] (already handled) FIRST\n\n[L30] [L9] (already handled) SECOND'),
+    earlierReply('[L31] ok'),
+    user('new one', 'n0'),
+    reply('reply one', 'r0'),
+    user('new two', 'n1'),
+    reply('reply two', 'r1'),
+  ]
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, {}, pointer(msgs))
+
+  expect(out.some(m => m.text === '[L8] (already handled) FIRST\n\n[L9] (already handled) SECOND')).toBe(true)
+})
+
+test('turns of an earlier span keep only their start: user 200, reply and teammate/subagent message 100', async () => {
+  const earlierQ = '[L10] (already handled) ' + 'q'.repeat(300) + '..[100 chars omitted]..' + 'zzzz'.repeat(50)
+  const earlierA = '[L12] ' + 'a'.repeat(100) + '[...truncated...]' + 'b'.repeat(100)
+  const msgs = [
+    user(`${HEAD} previous summary`, 'hs'),
+    earlierUser(earlierQ),
+    earlierReply(earlierA),
+    user('new one', 'n0'),
+    reply('reply one', 'r0'),
+    user('new two', 'n1'),
+    reply('reply two', 'r1'),
+  ]
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, {}, pointer(msgs))
+
+  const q = out.find(m => !m.handle && m.text.startsWith('[L10] (already handled) '))!
+  expect(q.text).toBe('[L10] (already handled) ' + 'q'.repeat(200) + '...')
+  const a = out.find(m => !m.handle && m.text.startsWith('[L12] '))!
+  expect(a.text).toBe('[L12] ' + 'a'.repeat(100) + '...')
+})
+
+test('with fewer than 5 human turns in the span, earlier spans fill it up to 5', async () => {
+  const earlier: SessionMessage[] = []
+  for (let i = 0; i < 8; i++) {
+    earlier.push(earlierUser(`[L${10 + 4 * i}] (already handled) earlier question ${i}`))
+    earlier.push(earlierReply(`[L${12 + 4 * i}] earlier answer ${i}`))
+  }
+  const msgs = [user(`${HEAD} previous summary`, 'hs'), ...earlier, user('new one', 'n0'), reply('reply one', 'r0'), user('new two', 'n1'), reply('reply two', 'r1')]
+  const report: Record<string, unknown> = {}
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, report, pointer(msgs))
+
+  // the two new exchanges are the tail; the dialogue reaches back for exactly 5 turns.
+  expect(report.dialogueHumanTurns).toBe(5)
+  expect(out.some(m => !m.handle && m.text.includes('earlier question 7'))).toBe(true)
+  expect(out.some(m => !m.handle && m.text.includes('earlier question 3'))).toBe(true)
+  expect(out.some(m => !m.handle && m.text.includes('earlier question 2'))).toBe(false)
+})
+
+test('limits count English characters: Korean text gets 2/3 of them', async () => {
+  const korean = '가'.repeat(400)
+  const english = 'x'.repeat(400)
+  const msgs = [user(korean, 'k0'), reply('a0', 'a0'), user(english, 'e0'), reply('a1', 'a1'), user('last one', 'u1'), reply('a2', 'a2'), user('final', 'u2'), reply('a3', 'a3')]
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: msgs.length }, THRESHOLD, {})
+
+  // 400 chars is under the English limit (500) but over the Korean one (333): cut 200 + 133.
+  expect(out.find(m => !m.handle && m.text.includes('가'))!.text).toBe('(already handled) ' + '가'.repeat(200) + '..[67 chars omitted]..' + '가'.repeat(133))
+  expect(out.find(m => !m.handle && m.text.includes('xxxx'))!.text).toBe('(already handled) ' + english)
+  expect(limitScale('가나다 abc')).toBe(2 / 3)
+  expect(limitScale('plain english text')).toBe(1)
+  expect(limitScale('日本語のテキスト')).toBe(2 / 3)
+  expect(limitScale('Привет, мир')).toBe(1)
+})
+
+test('estimateTokens follows the measured ratios: ~2.1 ASCII chars per token, ~1.35 tokens per other char', async () => {
+  expect(estimateTokens('a'.repeat(2100))).toBeGreaterThanOrEqual(990)
+  expect(estimateTokens('a'.repeat(2100))).toBeLessThanOrEqual(1010)
+  expect(estimateTokens('가'.repeat(100))).toBeGreaterThanOrEqual(130)
+  expect(estimateTokens('가'.repeat(100))).toBeLessThanOrEqual(140)
+})
+
 test('the abbreviated dialogue widens back to at least MIN_TURNS human turns', async () => {
   // Two compaction spans: 3 old exchanges, a boundary summary, then 2 new exchanges.
   const old = exchanges(3) // u0..a2
@@ -258,11 +408,12 @@ test('the abbreviated dialogue widens back to at least MIN_TURNS human turns', a
   expect(report.dialogueHumanTurns).toBe(3)
 })
 
-test('machine messages and idle notifications stay out of the abbreviated dialogue', async () => {
+test('teammate and subagent messages join the dialogue cut to their first 100 characters; idle notifications stay out', async () => {
+  const long = '<teammate-message from="variant-a">' + 'finding '.repeat(60) + 'TAIL_MARK</teammate-message>'
   const msgs = [
     user('plan the work', 'h0'),
     reply('dispatching', 'h1'),
-    user('<teammate-message from="variant-a">finished the audit, 3 findings</teammate-message>', 'h2'),
+    user(long, 'h2'),
     user('<task-notification>subagent done: see report.md</task-notification>', 'h3'),
     user('{"idle_notification":{"reason":"waiting"}}', 'h4'),
     user('what did they find?', 'h5'),
@@ -271,11 +422,14 @@ test('machine messages and idle notifications stay out of the abbreviated dialog
     reply('proceeding', 'h8'),
   ]
   const report: Record<string, unknown> = {}
-  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: 5 }, THRESHOLD, report)
+  const out = assemble(msgs, { text: 'S', source: 'prepared', anchor: 5 }, THRESHOLD, report, pointer(msgs))
 
   const dialogue = out.filter(m => !m.handle).map(m => m.text).join('\n')
-  expect(dialogue.includes('teammate-message')).toBe(false)
-  expect(dialogue.includes('task-notification')).toBe(false)
+  const teammate = out.find(m => !m.handle && m.text.includes('<teammate-message'))!
+  expect(teammate.text.startsWith('[L14] (already handled) <teammate-message from="variant-a">finding')).toBe(true)
+  expect(teammate.text.includes('TAIL_MARK')).toBe(false)
+  expect(teammate.text.includes('...')).toBe(true)
+  expect(dialogue.includes('<task-notification>subagent done: see report.md</task-notification>')).toBe(true)
   expect(dialogue.includes('idle_notification')).toBe(false)
   expect(dialogue.includes('plan the work')).toBe(true)
   // only 'plan the work', 'what did they find?' and 'thanks, proceed' count as human turns.

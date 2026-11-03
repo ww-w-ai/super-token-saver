@@ -136,14 +136,27 @@ the fork began — every later line is newer than the summary. **The summary ins
 | after-compact shell hook | handled marker → pointer to `restore.md` only; no marker → full ledger restore | ready prepared summary leads the restore (`restore-ledger.js --prepared-json`), then is marked consumed; else the ledger as-is |
 | machine messages (teammate reports, subagent notices) | summary layer verbatim, out of the abbreviated dialogue | summary layer when prepared, else re-injected verbatim |
 
+**Two words, two things.** *Abbreviation* (축약) is mechanical: the middle of a message is cut out with
+`...` and its start and end are kept verbatim; turns of earlier spans keep only their start. A *summary*
+(요약) is text the LLM writes. The dialogue is abbreviated; section A and B are the summary.
+
 **The mod is Claude Code-only** (2.1.287+). `hooks/hooks.json` lists `hooks/super-compact.ts` under
 `modules` beside the shell `hooks` (older Claude Code strips the unknown key; `claude plugin
 validate` reads both). It handles `/compact` and auto-compaction alike and rebuilds the conversation
-as: a summary message (section A = before the last compaction, section B = what the abbreviated
-dialogue loses, incl. one line per machine message); this span's dialogue, folded with `[L{n}]`
-pointers from `scripts/transcript-lines.js` (widened back to ≥10 human turns; teammate/subagent/idle
-messages left out); then the verbatim tail from the anchor (the last two full exchanges always inside
-it; a turn over `LONG_TURN_CAP` keeps its opening + an omission note + the steps past the anchor).
+as: a summary message (section A = before the last compaction, section B = the context the shortened
+messages cannot give: the tool process and all communication with agents and delegated work (subagent,
+teammate, headless or Codex run; messages sent and received) at summary level, the parts cut from messages, turns that no longer come back, work in
+flight; tool results and the instructions given to agents are not in the dialogue at all); this span's
+dialogue, with `[L{n}]` pointers from `scripts/transcript-lines.js` (a user turn
+over 500 chars cut to 300 + 200, a reply over 200 to 100 + 100, a teammate/subagent message to its first
+100; idle notifications left out); then the verbatim tail from the anchor (the last two full exchanges
+always inside it; a turn over `LONG_TURN_CAP`, the smaller of 8% of the threshold and 40K tokens, keeps
+its opening + an omission note + the steps past the anchor). The dialogue has no size cap, but at least
+`MIN_TURNS` (5) human turns: with fewer in this span it reaches back into earlier spans, whose turns
+keep only their start (user 200, reply and teammate/subagent message 100). The limits are English
+characters; text with ≥20% of its non-space characters in `DENSE_SCRIPT` (Hangul, Han, Kana, Thai, the
+Indic scripts ...) gets 2/3 of them (only Korean is measured; the rest of the list is from how
+tokenizers treat those scripts).
 With no prepared summary the anchor is the last 5% of the conversation and the module summarizes the
 rest itself (`$.model.complete` on the session's model; a 400/413 refusal splits the request in two,
 the older half carried as a continuation summary). When that fails too it returns `next(e)`
@@ -164,6 +177,20 @@ untouched and writes no handled marker.
   (`STALE_HOOKS_LABEL`); only the drawing changes. Do not "fix" it from a hook's registration or
   output: the text is set before any hook is looked up. Drop the hook once the client sends
   `compact_end` after those hooks.
+- **The dialogue is this compaction's own, not a growing archive.** A rebuild puts its abbreviated
+  dialogue right behind its summary, so the next compaction meets it again. The span therefore starts
+  behind that block (`currentSpanStart`; the new summary covers it), and a message an earlier rebuild
+  already abbreviated is not folded again; it keeps one `[L{n}]`, the innermost pointer, the transcript
+  line of the original (the transcript only grows, so one read reaches it), cut to its start when it
+  comes from an earlier span. How to read an original from its marker is not in the summary: the
+  after-compact hook injects it with the transcript path (`lookupGuide` in `scripts/restore-ledger.js`,
+  gate `test-restore-ledger.js`). Before this, every compaction
+  folded the previous dialogue again: one real session carried it through 4 compactions, and `[L]`
+  chains up to 26 deep were 47% of the dialogue's characters (468 messages, measured).
+- **Sizes are counted with a measured estimate.** `estimateTokens` in `hooks/super-compact.ts` is ~2.1
+  ASCII chars per token and ~1.35 tokens per other char (`count_tokens` on 3,975 texts of a real
+  session; the earlier 4 and 1.5 counted every kind 1.8–2.0× too few, so `LONG_TURN_CAP` held twice
+  what it said). `scripts/restore-ledger.js` still has the old ratios for its 60K restore budget.
 - **PreCompact hooks do not run when the mod replaces the summary** (the engine runs them inside its
   own summary step). The mod waits for the prepared summary itself (`awaitPrepared` →
   `precompact-wait.js`), so the `PreCompact` entry matters only without the mod.

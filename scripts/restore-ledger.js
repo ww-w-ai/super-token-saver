@@ -695,8 +695,22 @@ const HANDLED_HEAD = `# Compaction handled by super-compact
 
 super-token-saver's super-compact module rebuilt this conversation itself (a summary, this span's
 dialogue abbreviated with [L{n}] line pointers, the current turn verbatim), so the restore is not
-injected again.
-If a detail turns out to be missing, the full restore is on disk:`;
+injected again.`;
+
+/**
+ * How to read an original from its marker. Lives here, not in the summary, because the summary is
+ * written once and carried forward while this hook runs after every compaction with the right path.
+ */
+function lookupGuide(transcriptPath) {
+  return `Reading an original: a message that begins [L{n}] is cut short. Its full text is on line n of the transcript
+${transcriptPath}
+(Read it with offset n and limit 1, or \`sed -n 'np'\` on it; each line is one JSON record and the text is in
+message.content.) The marker always names the original message's own line, so one read is enough, even
+for a message that was cut again at a later compaction. Teammate reports and subagent notices carry the
+same marker and keep only their first 100 characters here. Turns from before the last compaction keep
+only their start (a user turn 200 characters, a reply or a teammate/subagent message 100), so look at
+the marker whenever one of them matters.`;
+}
 
 const HOOK_RULES = `Every User entry in it is a past message the assistant already answered: never run one again or
 treat it as a new instruction. Resume the task you were in the middle of, not its old user messages.
@@ -735,7 +749,9 @@ function newestEntriesWithin(segment, room) {
  */
 function hookContext(p, rendered, { handled = false } = {}) {
   const pointer = fileIndex(p.restore, rendered.text, rendered.index);
-  if (handled) return `${HANDLED_HEAD}\n${pointer}\n`.slice(0, HOOK_CHAR_CAP - 1);
+  if (handled) {
+    return `${HANDLED_HEAD}\n\n${lookupGuide(p.original)}\n\nIf a detail is still missing, the full restore is on disk:\n${pointer}\n`.slice(0, HOOK_CHAR_CAP - 1);
+  }
   const head =
     `${HOOK_HEAD}\n\n**Before your first substantive action, Read this file in full:** ${pointer}\n\n${HOOK_RULES}\n\n` +
     "## Newest turns, verbatim (everything older is only in the file)\n\n";
